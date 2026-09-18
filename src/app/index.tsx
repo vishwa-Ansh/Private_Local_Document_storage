@@ -9,6 +9,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -45,7 +46,10 @@ export default function HomePage() {
       return "Hello! 👋 How can I help you today?";
     }
 
-    if (q.includes("what is ai") || q.includes("artificial intelligence")) {
+    if (
+      q.includes("what is ai") ||
+      q.includes("artificial intelligence")
+    ) {
       return "Artificial Intelligence (AI) is a field of computer science that enables machines to perform tasks that normally require human intelligence, such as learning, reasoning, understanding language, and recognizing patterns.";
     }
 
@@ -67,7 +71,6 @@ export default function HomePage() {
 
     return `I understand your question: "${question}"\n\nThis is where the TL-On AI model will generate the actual response. You can connect your backend/API here to receive real AI answers.`;
   };
-
 
   const pickPhoto = async () => {
     const permission =
@@ -108,30 +111,37 @@ export default function HomePage() {
       });
     }
   };
+
   const sendMessage = (text?: string) => {
     const question = (text ?? message).trim();
 
-    if (!question) return;
+    if (!question && !selectedFile) return;
 
     const userMessage: Message = {
       id: Date.now(),
       role: "user",
-      text: question,
+      text:
+        question ||
+        `Attached file: ${selectedFile?.name || "file"}`,
     };
 
     const answer: Message = {
       id: Date.now() + 1,
       role: "assistant",
-      text: generateAnswer(question),
+      text: generateAnswer(
+        question || "Please analyze the attached file."
+      ),
     };
 
     setMessages((prev) => [...prev, userMessage, answer]);
     setMessage("");
+    setSelectedFile(null);
   };
 
   const newChat = () => {
     setMessages([]);
     setMessage("");
+    setSelectedFile(null);
     closeMenu();
   };
 
@@ -153,32 +163,59 @@ export default function HomePage() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <Stack.Screen options={{
-        headerTransparent: true,
-        headerShown: false
+    <SafeAreaView
+      style={styles.safe}
+      edges={["top", "left", "right"]}
+    >
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="#F7F7F5"
+        translucent={false}
+      />
 
-      }} />
+      <Stack.Screen
+        options={{
+          headerShown: false,
+        }}
+      />
+
       <KeyboardAvoidingView
-  style={styles.keyboard}
-  behavior={Platform.OS === "ios" ? "padding" : "height"}
-  keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
->
+        style={styles.keyboard}
+        behavior={
+          Platform.OS === "ios" ? "padding" : "height"
+        }
+        keyboardVerticalOffset={
+          Platform.OS === "ios" ? 0 : 0
+        }
+      >
         <View style={styles.container}>
           <View style={styles.header}>
             <Pressable
-              style={styles.headerButton}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.pressed,
+              ]}
+              android_ripple={{
+                color: "#E5E5E1",
+                borderless: true,
+              }}
               onPress={openMenu}
             >
               <Ionicons
                 name="menu-outline"
-                size={25}
+                size={30}
                 color="#171717"
               />
             </Pressable>
 
             <Pressable
-              style={styles.modelButton}
+              style={({ pressed }) => [
+                styles.modelButton,
+                pressed && styles.pressed,
+              ]}
+              android_ripple={{
+                color: "#E5E5E1",
+              }}
               onPress={openModelSelection}
             >
               <Text style={styles.modelName}>
@@ -187,18 +224,25 @@ export default function HomePage() {
 
               <Ionicons
                 name="chevron-down"
-                size={15}
+                size={20}
                 color="#777"
               />
             </Pressable>
 
             <Pressable
-              style={styles.headerButton}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && styles.pressed,
+              ]}
+              android_ripple={{
+                color: "#E5E5E1",
+                borderless: true,
+              }}
               onPress={newChat}
             >
               <Ionicons
                 name="create-outline"
-                size={22}
+                size={30}
                 color="#171717"
               />
             </Pressable>
@@ -210,62 +254,17 @@ export default function HomePage() {
               contentContainerStyle={styles.emptyContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              bounces={Platform.OS === "ios"}
             >
               <View style={styles.hero}>
-                {/* <View style={styles.logo}>
-                  <Ionicons
-                    name="sparkles"
-                    size={26}
-                    color="#FFFFFF"
-                  />
-                </View> */}
-
                 <Text style={styles.title}>
                   How can I help?
                 </Text>
 
                 <Text style={styles.subtitle}>
-                  Ask anything, explore ideas, write code, or create
-                  something new.
+                  Ask anything, explore ideas, write code, or
+                  create something new.
                 </Text>
-              </View>
-
-              <View style={styles.suggestions}>
-                {/* <SuggestionCard
-                  icon="bulb-outline"
-                  title="Explain something"
-                  subtitle="Learn a concept clearly"
-                  onPress={() =>
-                    sendMessage("Explain something to me")
-                  }
-                />
-
-                <SuggestionCard
-                  icon="code-slash-outline"
-                  title="Write code"
-                  subtitle="Build or debug your project"
-                  onPress={() =>
-                    sendMessage("Help me write some code")
-                  }
-                /> */}
-
-                {/* <SuggestionCard
-                  icon="create-outline"
-                  title="Help me write"
-                  subtitle="Draft, rewrite or improve text"
-                  onPress={() =>
-                    sendMessage("Help me write something")
-                  }
-                /> */}
-
-                {/* <SuggestionCard
-                  icon="compass-outline"
-                  title="Explore ideas"
-                  subtitle="Brainstorm something new"
-                  onPress={() =>
-                    sendMessage("Help me explore some ideas")
-                  }
-                /> */}
               </View>
             </ScrollView>
           ) : (
@@ -274,10 +273,17 @@ export default function HomePage() {
               contentContainerStyle={styles.chatContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              bounces={Platform.OS === "ios"}
+              automaticallyAdjustKeyboardInsets={
+                Platform.OS === "ios"
+              }
             >
               {messages.map((item) =>
                 item.role === "user" ? (
-                  <View key={item.id} style={styles.userRow}>
+                  <View
+                    key={item.id}
+                    style={styles.userRow}
+                  >
                     <View style={styles.userBubble}>
                       <Text style={styles.userText}>
                         {item.text}
@@ -285,70 +291,66 @@ export default function HomePage() {
                     </View>
                   </View>
                 ) : (
-                  <View key={item.id} style={styles.aiResponse}>
-                    <View style={styles.aiHeader}>
-                      {/* <View style={styles.aiAvatar}>
-                        <Ionicons
-                          name="sparkles"
-                          size={14}
-                          color="#FFFFFF"
-                        />
-                      </View> */}
-
-                      {/* <Text style={styles.aiName}>
-                        Trilok-On
-                      </Text> */}
-                    </View>
-
+                  <View
+                    key={item.id}
+                    style={styles.aiResponse}
+                  >
                     <Text style={styles.aiText}>
                       {item.text}
                     </Text>
                   </View>
                 )
               )}
-
             </ScrollView>
           )}
 
           <View style={styles.composerWrapper}>
-
             {selectedFile && (
-  <View style={styles.filePreview}>
-    <View style={styles.fileIcon}>
-      <Ionicons
-        name={
-          selectedFile.type.startsWith("image/")
-            ? "image-outline"
-            : "document-outline"
-        }
-        size={18}
-        color="#333"
-      />
-    </View>
+              <View style={styles.filePreview}>
+                <View style={styles.fileIcon}>
+                  <Ionicons
+                    name={
+                      selectedFile.type.startsWith("image/")
+                        ? "image-outline"
+                        : "document-outline"
+                    }
+                    size={18}
+                    color="#333"
+                  />
+                </View>
 
-    <Text
-      style={styles.fileName}
-      numberOfLines={1}
-    >
-      {selectedFile.name}
-    </Text>
+                <Text
+                  style={styles.fileName}
+                  numberOfLines={1}
+                >
+                  {selectedFile.name}
+                </Text>
 
-    <Pressable
-      onPress={() => setSelectedFile(null)}
-      style={styles.removeFile}
-    >
-      <Ionicons
-        name="close"
-        size={17}
-        color="#666"
-      />
-    </Pressable>
-  </View>
-)}
+                <Pressable
+                  onPress={() => setSelectedFile(null)}
+                  style={styles.removeFile}
+                  android_ripple={{
+                    color: "#E5E5E1",
+                    borderless: true,
+                  }}
+                >
+                  <Ionicons
+                    name="close"
+                    size={17}
+                    color="#666"
+                  />
+                </Pressable>
+              </View>
+            )}
+
             <View style={styles.composer}>
               <Pressable
                 style={styles.attachButton}
                 onPress={pickPhoto}
+                android_ripple={{
+                  color: "#E5E5E1",
+                  borderless: true,
+                }}
               >
                 <Ionicons
                   name="add"
@@ -360,31 +362,38 @@ export default function HomePage() {
               <TextInput
                 value={message}
                 onChangeText={setMessage}
-                placeholder="Message Trilok-On..."
+                placeholder="Reply to Trilok-On..."
                 placeholderTextColor="#999"
                 multiline
                 maxLength={4000}
                 style={styles.input}
+                textAlignVertical="center"
                 returnKeyType="send"
+                blurOnSubmit={false}
                 onSubmitEditing={() => sendMessage()}
               />
 
               <Pressable
                 style={[
                   styles.voiceButton,
-                  !!message.trim() && styles.sendButton,
+                  (!!message.trim() || !!selectedFile) &&
+                    styles.sendButton,
                 ]}
                 onPress={() => sendMessage()}
+                android_ripple={{
+                  color: "#333333",
+                  borderless: true,
+                }}
               >
                 <Ionicons
                   name={
-                    message.trim()
+                    message.trim() || selectedFile
                       ? "arrow-up"
                       : "mic-outline"
                   }
                   size={19}
                   color={
-                    message.trim()
+                    message.trim() || selectedFile
                       ? "#FFFFFF"
                       : "#555"
                   }
@@ -393,7 +402,8 @@ export default function HomePage() {
             </View>
 
             <Text style={styles.disclaimer}>
-              TL-On can make mistakes. Check important information.
+              TL-On can make mistakes. Check important
+              information.
             </Text>
           </View>
         </View>
@@ -402,7 +412,10 @@ export default function HomePage() {
       <Modal
         visible={menuVisible}
         transparent
-        animationType="fade"
+        animationType={
+          Platform.OS === "android" ? "fade" : "slide"
+        }
+        statusBarTranslucent={false}
         onRequestClose={closeMenu}
       >
         <Pressable
@@ -414,21 +427,17 @@ export default function HomePage() {
             onPress={(event) => event.stopPropagation()}
           >
             <View style={styles.drawerHeader}>
-              {/* <View style={styles.drawerLogo}>
-                <Ionicons
-                  name="sparkles"
-                  size={11}
-                  color="#FFFFFF"
-                />
-              </View> */}
-
               <Text style={styles.drawerTitle}>
-                Trilok-On 
+                Trilok-On
               </Text>
 
               <Pressable
                 style={styles.closeButton}
                 onPress={closeMenu}
+                android_ripple={{
+                  color: "#DCDCD7",
+                  borderless: true,
+                }}
               >
                 <Ionicons
                   name="close"
@@ -441,6 +450,9 @@ export default function HomePage() {
             <Pressable
               style={styles.newChatButton}
               onPress={newChat}
+              android_ripple={{
+                color: "#333333",
+              }}
             >
               <Ionicons
                 name="add"
@@ -521,53 +533,6 @@ export default function HomePage() {
   );
 }
 
-function SuggestionCard({
-  icon,
-  title,
-  subtitle,
-  onPress,
-}: {
-  icon: IconName;
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.suggestion,
-        pressed && styles.suggestionPressed,
-      ]}
-      onPress={onPress}
-    >
-      <View style={styles.suggestionIcon}>
-        <Ionicons
-          name={icon}
-          size={19}
-          color="#444"
-        />
-      </View>
-
-      <View style={styles.suggestionContent}>
-        <Text style={styles.suggestionTitle}>
-          {title}
-        </Text>
-
-        <Text style={styles.suggestionSubtitle}>
-          {subtitle}
-        </Text>
-      </View>
-
-      <Ionicons
-        name="arrow-up-outline"
-        size={17}
-        color="#999"
-        style={styles.arrow}
-      />
-    </Pressable>
-  );
-}
-
 function DrawerItem({
   icon,
   title,
@@ -584,6 +549,9 @@ function DrawerItem({
         pressed && styles.drawerItemPressed,
       ]}
       onPress={onPress}
+      android_ripple={{
+        color: "#DEDED9",
+      }}
     >
       <Ionicons
         name={icon}
@@ -616,10 +584,11 @@ const styles = StyleSheet.create({
 
   container: {
     flex: 1,
+    backgroundColor: "#F7F7F5",
   },
 
   header: {
-    height: 60,
+    height: Platform.OS === "android" ? 68 : 60,
     paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
@@ -632,6 +601,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
 
   modelButton: {
@@ -641,12 +611,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
+    overflow: "hidden",
   },
 
   modelName: {
     fontSize: 15,
     fontWeight: "700",
     color: "#242424",
+  },
+
+  pressed: {
+    opacity: 0.7,
   },
 
   scroll: {
@@ -656,7 +631,8 @@ const styles = StyleSheet.create({
   emptyContent: {
     flexGrow: 1,
     paddingHorizontal: 18,
-    paddingBottom: 20,
+    paddingBottom:
+      Platform.OS === "android" ? 24 : 20,
     justifyContent: "center",
   },
 
@@ -665,18 +641,8 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
 
-  logo: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: "#171717",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
-  },
-
   title: {
-    fontSize: 29,
+    fontSize: Platform.OS === "android" ? 28 : 29,
     fontWeight: "700",
     color: "#171717",
     letterSpacing: -0.8,
@@ -691,57 +657,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  suggestions: {
-    gap: 10,
-  },
-
-  suggestion: {
-    minHeight: 67,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#E1E1DC",
-    backgroundColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  suggestionPressed: {
-    backgroundColor: "#F0F0EC",
-    transform: [{ scale: 0.99 }],
-  },
-
-  suggestionIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 12,
-    backgroundColor: "#F1F1ED",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  suggestionContent: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
-  suggestionTitle: {
-    fontSize: 13.5,
-    fontWeight: "600",
-    color: "#292929",
-  },
-
-  suggestionSubtitle: {
-    marginTop: 3,
-    fontSize: 11,
-    color: "#969690",
-  },
-
-  arrow: {
-    transform: [{ rotate: "45deg" }],
-  },
-
   chatScroll: {
     flex: 1,
   },
@@ -749,12 +664,8 @@ const styles = StyleSheet.create({
   chatContent: {
     paddingHorizontal: 16,
     paddingTop: 15,
-    paddingBottom: 20,
+    paddingBottom: 24,
   },
-
-
-
-
 
   userRow: {
     alignItems: "flex-end",
@@ -781,46 +692,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
 
-  aiHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-
-  aiAvatar: {
-    width: 27,
-    height: 27,
-    borderRadius: 9,
-    backgroundColor: "#171717",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-
-  aiName: {
-    fontSize: 12.5,
-    fontWeight: "700",
-    color: "#292929",
-  },
-
   aiText: {
     fontSize: 14,
     lineHeight: 23,
     color: "#292929",
   },
 
-
-
-
-
-
-
   composerWrapper: {
-  paddingHorizontal: 13,
-  paddingTop: 8,
-  paddingBottom: 4,
-  backgroundColor: "#F7F7F5",
-},
+    paddingHorizontal: 13,
+    paddingTop: 8,
+    paddingBottom:
+      Platform.OS === "android" ? 7 : 4,
+    backgroundColor: "#F7F7F5",
+  },
 
   composer: {
     minHeight: 55,
@@ -829,10 +713,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderWidth: 1,
     borderColor: "#DCDCD7",
-    borderRadius: 19,
+    borderRadius: 50,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "flex-end",
+    marginBottom: 6,
   },
 
   attachButton: {
@@ -840,6 +725,8 @@ const styles = StyleSheet.create({
     height: 39,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 13,
+    overflow: "hidden",
   },
 
   input: {
@@ -847,10 +734,15 @@ const styles = StyleSheet.create({
     minHeight: 39,
     maxHeight: 125,
     paddingHorizontal: 5,
-    paddingTop: 9,
-    paddingBottom: 7,
+    paddingTop:
+      Platform.OS === "android" ? 8 : 9,
+    paddingBottom:
+      Platform.OS === "android" ? 6 : 7,
     fontSize: 14,
+    lineHeight: Platform.OS === "android" ? 20 : 19,
     color: "#222",
+    includeFontPadding: Platform.OS === "android",
+    
   },
 
   voiceButton: {
@@ -860,6 +752,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0EC",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
 
   sendButton: {
@@ -868,10 +761,49 @@ const styles = StyleSheet.create({
 
   disclaimer: {
     marginTop: 6,
-    marginBottom: 7,
+    marginBottom:
+      Platform.OS === "android" ? 20 : 7,
     textAlign: "center",
-    fontSize: 9.5,
-    color: "#A0A09A",
+    fontSize: 10,
+    color: "#898988",
+  },
+
+  filePreview: {
+    height: 48,
+    marginBottom: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E1E1DC",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  fileIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: "#F0F0EC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fileName: {
+    flex: 1,
+    marginLeft: 9,
+    fontSize: 12,
+    color: "#333",
+  },
+
+  removeFile: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
 
   modalOverlay: {
@@ -881,14 +813,16 @@ const styles = StyleSheet.create({
   },
 
   drawer: {
-    width: "82%",
+    width: Platform.OS === "android" ? "70%" : "82%",
     maxWidth: 360,
     height: "100%",
-    paddingTop: 58,
+    paddingTop:
+      Platform.OS === "android" ? 60 : 58,
     paddingHorizontal: 14,
     backgroundColor: "#F7F7F5",
     borderTopRightRadius: 25,
     borderBottomRightRadius: 25,
+    elevation: 18,
   },
 
   drawerHeader: {
@@ -898,20 +832,11 @@ const styles = StyleSheet.create({
     marginBottom: 17,
   },
 
-  drawerLogo: {
-    width: 37,
-    height: 37,
-    borderRadius: 12,
-    backgroundColor: "#171717",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   drawerTitle: {
-    marginLeft: 10,
+    marginLeft: 2,
     fontSize: 18,
     fontWeight: "700",
-    color: "#3a3a3a",
+    color: "#3A3A3A",
   },
 
   closeButton: {
@@ -922,6 +847,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EAEAE5",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
 
   newChatButton: {
@@ -933,6 +859,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginBottom: 10,
     gap: 10,
+    overflow: "hidden",
+    elevation: 2,
   },
 
   newChatText: {
@@ -947,6 +875,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     flexDirection: "row",
     alignItems: "center",
+    overflow: "hidden",
   },
 
   drawerItemPressed: {
@@ -971,7 +900,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 14,
     right: 14,
-    bottom: 30,
+    bottom:
+      Platform.OS === "android" ? 22 : 30,
     padding: 12,
     borderRadius: 16,
     backgroundColor: "#FFFFFF",
@@ -979,6 +909,7 @@ const styles = StyleSheet.create({
     borderColor: "#E1E1DC",
     flexDirection: "row",
     alignItems: "center",
+    elevation: 3,
   },
 
   accountAvatar: {
@@ -1012,42 +943,4 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#999",
   },
-
-  filePreview: {
-  height: 48,
-  marginBottom: 7,
-  paddingHorizontal: 10,
-  paddingVertical: 7,
-  borderRadius: 14,
-  borderWidth: 1,
-  borderColor: "#E1E1DC",
-  backgroundColor: "#FFFFFF",
-  flexDirection: "row",
-  alignItems: "center",
-},
-
-fileIcon: {
-  width: 32,
-  height: 32,
-  borderRadius: 9,
-  backgroundColor: "#F0F0EC",
-  alignItems: "center",
-  justifyContent: "center",
-},
-
-fileName: {
-  flex: 1,
-  marginLeft: 9,
-  fontSize: 12,
-  color: "#333",
-},
-
-removeFile: {
-  width: 30,
-  height: 30,
-  alignItems: "center",
-  justifyContent: "center",
-},
-
-
 });
