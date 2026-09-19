@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
@@ -11,13 +11,12 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "../context/ThemeContext";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
 export default function SettingsPage() {
-  const [theme, setTheme] = useState<"System" | "Light" | "Dark">(
-    "System"
-  );
+  const { mode, setTheme, colors, theme } = useTheme();
 
   const [enterToSend, setEnterToSend] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -27,13 +26,28 @@ export default function SettingsPage() {
   const [responseCompleted, setResponseCompleted] = useState(true);
   const [productUpdates, setProductUpdates] = useState(false);
 
+  const selectedTheme =
+    mode === "system"
+      ? "System"
+      : mode === "light"
+      ? "Light"
+      : "Dark";
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <Stack.Screen options={{
-      headerTransparent:true,
-      headerShown:false
-    }}/>
-      
+    <SafeAreaView
+      style={[
+        styles.safe,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <Stack.Screen
+        options={{
+          headerShown: false,
+        }}
+      />
+
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -41,116 +55,225 @@ export default function SettingsPage() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Settings</Text>
-            <Text style={styles.subtitle}>
-              Customize your Nova experience
+            <Text style={[styles.title, { color: colors.text }]}>
+              Settings
+            </Text>
+
+            <Text
+              style={[
+                styles.subtitle,
+                { color: colors.textMuted },
+              ]}
+            >
+              Customize your TL-On experience
             </Text>
           </View>
 
-          <View style={styles.settingsIcon}>
+          <View
+            style={[
+              styles.settingsIcon,
+              {
+                backgroundColor: colors.surfaceSecondary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <Ionicons
               name="settings-outline"
-              size={22}
-              color="#333"
+              size={21}
+              color={colors.text}
             />
           </View>
         </View>
 
-        <Section title="Account">
+        <Section title="Account" colors={colors}>
           <SettingRow
+            colors={colors}
             icon="person-outline"
             title="Profile"
             subtitle="Manage your profile"
-            onPress={() => {}}
+            onPress={() => router.push("/profile")}
           />
 
           <SettingRow
+            colors={colors}
             icon="mail-outline"
             title="Email"
-            subtitle="night@example.com"
+            subtitle="Manage your account email"
             onPress={() => {}}
           />
 
           <SettingRow
+            colors={colors}
             icon="card-outline"
             title="Subscription"
-            subtitle="Free plan"
+            subtitle="Manage your current plan"
             badge="Free"
-            onPress={() => {}}
+            onPress={() => router.push("/usage")}
           />
 
           <SettingRow
+            colors={colors}
             icon="bar-chart-outline"
             title="Usage"
             subtitle="View your usage and limits"
-            onPress={() => {}}
+            onPress={() => router.push("/usage")}
           />
         </Section>
 
-        <Section title="Appearance">
-          <View style={styles.appearanceCard}>
+        <Section title="Appearance" colors={colors}>
+          <View
+            style={[
+              styles.appearanceCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <View style={styles.rowTop}>
-              <View style={styles.settingIcon}>
+              <View
+                style={[
+                  styles.settingIcon,
+                  {
+                    backgroundColor:
+                      colors.surfaceSecondary,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="color-palette-outline"
                   size={19}
-                  color="#333"
+                  color={colors.text}
                 />
               </View>
 
               <View style={styles.rowContent}>
-                <Text style={styles.rowTitle}>Theme</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text
+                  style={[
+                    styles.rowTitle,
+                    { color: colors.text },
+                  ]}
+                >
+                  Theme
+                </Text>
+
+                <Text
+                  style={[
+                    styles.rowSubtitle,
+                    { color: colors.textMuted },
+                  ]}
+                >
                   Choose how TL-On looks
                 </Text>
               </View>
             </View>
 
-            <View style={styles.themeSelector}>
+            <View
+              style={[
+                styles.themeSelector,
+                {
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                },
+              ]}
+            >
               {(["System", "Light", "Dark"] as const).map(
-                (item) => (
-                  <Pressable
-                    key={item}
-                    onPress={() => setTheme(item)}
-                    style={[
-                      styles.themeOption,
-                      theme === item && styles.themeOptionActive,
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        item === "System"
-                          ? "phone-portrait-outline"
-                          : item === "Light"
-                          ? "sunny-outline"
-                          : "moon-outline"
-                      }
-                      size={16}
-                      color={theme === item ? "#FFFFFF" : "#666"}
-                    />
+                (item) => {
+                  const active = selectedTheme === item;
 
-                    <Text
+                  return (
+                    <Pressable
+                      key={item}
+                      onPress={() =>
+                        setTheme(
+                          item === "System"
+                            ? "system"
+                            : item === "Light"
+                            ? "light"
+                            : "dark"
+                        )
+                      }
                       style={[
-                        styles.themeText,
-                        theme === item &&
-                          styles.themeTextActive,
+                        styles.themeOption,
+                        active && {
+                          backgroundColor: colors.primary,
+                        },
                       ]}
                     >
-                      {item}
-                    </Text>
-                  </Pressable>
-                )
+                      <Ionicons
+                        name={
+                          item === "System"
+                            ? "phone-portrait-outline"
+                            : item === "Light"
+                            ? "sunny-outline"
+                            : "moon-outline"
+                        }
+                        size={16}
+                        color={
+                          active
+                            ? colors.primaryText
+                            : colors.textSecondary
+                        }
+                      />
+
+                      <Text
+                        style={[
+                          styles.themeText,
+                          {
+                            color: active
+                              ? colors.primaryText
+                              : colors.textSecondary,
+                          },
+                        ]}
+                      >
+                        {item}
+                      </Text>
+                    </Pressable>
+                  );
+                }
               )}
             </View>
 
-            <Pressable style={styles.accentRow}>
-              <View style={styles.accentColor} />
+            <Pressable
+              style={[
+                styles.accentRow,
+                {
+                  borderTopColor: colors.border,
+                },
+              ]}
+              onPress={() =>
+                Alert.alert(
+                  "Accent Color",
+                  "Accent color customization will be available soon."
+                )
+              }
+            >
+              <View
+                style={[
+                  styles.accentColor,
+                  {
+                    backgroundColor: colors.primary,
+                  },
+                ]}
+              />
 
               <View style={styles.rowContent}>
-                <Text style={styles.rowTitle}>
+                <Text
+                  style={[
+                    styles.rowTitle,
+                    { color: colors.text },
+                  ]}
+                >
                   Accent color
                 </Text>
-                <Text style={styles.rowSubtitle}>
+
+                <Text
+                  style={[
+                    styles.rowSubtitle,
+                    { color: colors.textMuted },
+                  ]}
+                >
                   Customize the interface accent
                 </Text>
               </View>
@@ -158,14 +281,15 @@ export default function SettingsPage() {
               <Ionicons
                 name="chevron-forward"
                 size={17}
-                color="#999"
+                color={colors.textMuted}
               />
             </Pressable>
           </View>
         </Section>
 
-        <Section title="Chat">
+        <Section title="Chat" colors={colors}>
           <ToggleRow
+            colors={colors}
             icon="return-down-forward-outline"
             title="Enter to send"
             subtitle="Press Enter to send messages"
@@ -174,6 +298,7 @@ export default function SettingsPage() {
           />
 
           <ToggleRow
+            colors={colors}
             icon="arrow-down-outline"
             title="Auto-scroll"
             subtitle="Keep the latest response visible"
@@ -182,6 +307,7 @@ export default function SettingsPage() {
           />
 
           <ToggleRow
+            colors={colors}
             icon="time-outline"
             title="Show timestamps"
             subtitle="Display message timestamps"
@@ -190,6 +316,7 @@ export default function SettingsPage() {
           />
 
           <ToggleRow
+            colors={colors}
             icon="pulse-outline"
             title="Response streaming"
             subtitle="Show AI responses as they arrive"
@@ -198,6 +325,7 @@ export default function SettingsPage() {
           />
 
           <SettingRow
+            colors={colors}
             icon="code-slash-outline"
             title="Code blocks"
             subtitle="Customize code rendering"
@@ -205,16 +333,18 @@ export default function SettingsPage() {
           />
         </Section>
 
-        <Section title="Notifications">
+        <Section title="Notifications" colors={colors}>
           <ToggleRow
+            colors={colors}
             icon="notifications-outline"
             title="Push notifications"
-            subtitle="Allow Nova notifications"
+            subtitle="Allow TL-On notifications"
             value={pushNotifications}
             onChange={setPushNotifications}
           />
 
           <ToggleRow
+            colors={colors}
             icon="checkmark-circle-outline"
             title="Response completed"
             subtitle="Notify when a response finishes"
@@ -223,16 +353,18 @@ export default function SettingsPage() {
           />
 
           <ToggleRow
+            colors={colors}
             icon="megaphone-outline"
             title="Product updates"
-            subtitle="News about Nova and new features"
+            subtitle="News about TL-On and new features"
             value={productUpdates}
             onChange={setProductUpdates}
           />
         </Section>
 
-        <Section title="Data & Privacy">
+        <Section title="Data & Privacy" colors={colors}>
           <SettingRow
+            colors={colors}
             icon="archive-outline"
             title="Archived chats"
             subtitle="View your archived conversations"
@@ -240,6 +372,7 @@ export default function SettingsPage() {
           />
 
           <SettingRow
+            colors={colors}
             icon="bookmark-outline"
             title="Saved chats"
             subtitle="View saved conversations"
@@ -247,54 +380,63 @@ export default function SettingsPage() {
           />
 
           <SettingRow
+            colors={colors}
             icon="sparkles-outline"
             title="Memory"
-            subtitle="Manage what Nova remembers"
+            subtitle="Manage what TL-On remembers"
             onPress={() => {}}
           />
 
           <SettingRow
+            colors={colors}
             icon="download-outline"
             title="Export chats"
             subtitle="Download your conversation data"
-            onPress={() => {
+            onPress={() =>
               Alert.alert(
                 "Export chats",
                 "Your chat export will be prepared here."
-              );
-            }}
+              )
+            }
           />
 
           <SettingRow
+            colors={colors}
             icon="trash-outline"
             title="Clear local data"
             subtitle="Remove locally stored application data"
             danger
-            onPress={() => {
+            onPress={() =>
               Alert.alert(
                 "Clear local data",
                 "This will remove locally stored data from this device.",
                 [
-                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Cancel",
+                    style: "cancel",
+                  },
                   {
                     text: "Clear",
                     style: "destructive",
+                    onPress: () => {},
                   },
                 ]
-              );
-            }}
+              )
+            }
           />
         </Section>
 
-        <Section title="About">
+        <Section title="About" colors={colors}>
           <SettingRow
+            colors={colors}
             icon="information-circle-outline"
-            title="About Nova"
+            title="About TL-On"
             subtitle="Learn more about the application"
             onPress={() => {}}
           />
 
           <SettingRow
+            colors={colors}
             icon="shield-checkmark-outline"
             title="Privacy"
             subtitle="Privacy policy"
@@ -302,6 +444,7 @@ export default function SettingsPage() {
           />
 
           <SettingRow
+            colors={colors}
             icon="document-text-outline"
             title="Terms"
             subtitle="Terms of service"
@@ -309,13 +452,15 @@ export default function SettingsPage() {
           />
 
           <SettingRow
+            colors={colors}
             icon="help-circle-outline"
             title="Help & support"
-            subtitle="Get help with Nova"
+            subtitle="Get help with TL-On"
             onPress={() => {}}
           />
 
           <SettingRow
+            colors={colors}
             icon="chatbubble-ellipses-outline"
             title="Send feedback"
             subtitle="Tell us what you think"
@@ -324,12 +469,38 @@ export default function SettingsPage() {
         </Section>
 
         <View style={styles.version}>
-          <View style={styles.versionLogo}>
-            <Ionicons name="sparkles" size={15} color="#FFF" />
+          <View
+            style={[
+              styles.versionLogo,
+              {
+                backgroundColor: colors.primary,
+              },
+            ]}
+          >
+            <Ionicons
+              name="sparkles"
+              size={15}
+              color={colors.primaryText}
+            />
           </View>
 
-          <Text style={styles.versionName}>Nova</Text>
-          <Text style={styles.versionText}>Version 1.0.0</Text>
+          <Text
+            style={[
+              styles.versionName,
+              { color: colors.textSecondary },
+            ]}
+          >
+            TL-On
+          </Text>
+
+          <Text
+            style={[
+              styles.versionText,
+              { color: colors.textMuted },
+            ]}
+          >
+            Version 1.0.0
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -339,15 +510,34 @@ export default function SettingsPage() {
 function Section({
   title,
   children,
+  colors,
 }: {
   title: string;
   children: React.ReactNode;
+  colors: any;
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text
+        style={[
+          styles.sectionTitle,
+          { color: colors.textMuted },
+        ]}
+      >
+        {title}
+      </Text>
 
-      <View style={styles.sectionCard}>{children}</View>
+      <View
+        style={[
+          styles.sectionCard,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        {children}
+      </View>
     </View>
   );
 }
@@ -359,6 +549,7 @@ function SettingRow({
   badge,
   danger,
   onPress,
+  colors,
 }: {
   icon: IconName;
   title: string;
@@ -366,25 +557,32 @@ function SettingRow({
   badge?: string;
   danger?: boolean;
   onPress: () => void;
+  colors: any;
 }) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.settingRow,
-        pressed && styles.rowPressed,
+        pressed && {
+          backgroundColor: colors.surfaceSecondary,
+        },
       ]}
       onPress={onPress}
     >
       <View
         style={[
           styles.settingIcon,
-          danger && styles.dangerIcon,
+          {
+            backgroundColor: danger
+              ? themeDangerBackground(colors)
+              : colors.surfaceSecondary,
+          },
         ]}
       >
         <Ionicons
           name={icon}
           size={19}
-          color={danger ? "#C0392B" : "#333"}
+          color={danger ? colors.danger : colors.text}
         />
       </View>
 
@@ -393,28 +591,54 @@ function SettingRow({
           <Text
             style={[
               styles.rowTitle,
-              danger && styles.dangerText,
+              {
+                color: danger
+                  ? colors.danger
+                  : colors.text,
+              },
             ]}
           >
             {title}
           </Text>
 
           {badge && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{badge}</Text>
+            <View
+              style={[
+                styles.badge,
+                {
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.badgeText,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                {badge}
+              </Text>
             </View>
           )}
         </View>
 
         {subtitle && (
-          <Text style={styles.rowSubtitle}>{subtitle}</Text>
+          <Text
+            style={[
+              styles.rowSubtitle,
+              { color: colors.textMuted },
+            ]}
+          >
+            {subtitle}
+          </Text>
         )}
       </View>
 
       <Ionicons
         name="chevron-forward"
         size={17}
-        color="#A0A09A"
+        color={colors.textMuted}
       />
     </Pressable>
   );
@@ -426,41 +650,81 @@ function ToggleRow({
   subtitle,
   value,
   onChange,
+  colors,
 }: {
   icon: IconName;
   title: string;
   subtitle: string;
   value: boolean;
   onChange: (value: boolean) => void;
+  colors: any;
 }) {
   return (
     <View style={styles.settingRow}>
-      <View style={styles.settingIcon}>
-        <Ionicons name={icon} size={19} color="#333" />
+      <View
+        style={[
+          styles.settingIcon,
+          {
+            backgroundColor: colors.surfaceSecondary,
+          },
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={19}
+          color={colors.text}
+        />
       </View>
 
       <View style={styles.rowContent}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+        <Text
+          style={[
+            styles.rowTitle,
+            { color: colors.text },
+          ]}
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={[
+            styles.rowSubtitle,
+            { color: colors.textMuted },
+          ]}
+        >
+          {subtitle}
+        </Text>
       </View>
 
       <Switch
         value={value}
         onValueChange={onChange}
         trackColor={{
-          false: "#D9D9D4",
-          true: "#303030",
+          false: colors.border,
+          true: colors.primary,
         }}
-        thumbColor="#FFFFFF"
+        thumbColor={
+          theme === "dark"
+            ? "#111111"
+            : "#FFFFFF"
+        }
+        ios_backgroundColor={colors.border}
       />
     </View>
   );
 }
 
+function themeDangerBackground(colors: any) {
+  return colors.theme === "dark"
+    ? "#321A1A"
+    : "#FCEDEA";
+}
+
+const theme = "light";
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F7F5",
   },
 
   container: {
@@ -469,7 +733,7 @@ const styles = StyleSheet.create({
 
   content: {
     paddingHorizontal: 15,
-    paddingBottom: 40,
+    paddingBottom: 45,
   },
 
   header: {
@@ -482,23 +746,21 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 28,
+    fontSize: 29,
     fontWeight: "700",
-    letterSpacing: -0.7,
-    color: "#151515",
+    letterSpacing: -0.8,
   },
 
   subtitle: {
     marginTop: 4,
     fontSize: 12.5,
-    color: "#898984",
   },
 
   settingsIcon: {
     width: 44,
     height: 44,
     borderRadius: 15,
-    backgroundColor: "#EAEAE6",
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -510,19 +772,16 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginLeft: 5,
     marginBottom: 8,
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: "700",
-    color: "#858580",
     textTransform: "uppercase",
-    letterSpacing: 0.55,
+    letterSpacing: 0.65,
   },
 
   sectionCard: {
     overflow: "hidden",
-    borderRadius: 19,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E0E0DB",
-    backgroundColor: "#FFFFFF",
   },
 
   settingRow: {
@@ -533,21 +792,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  rowPressed: {
-    backgroundColor: "#F2F2EE",
-  },
-
   settingIcon: {
     width: 39,
     height: 39,
     borderRadius: 12,
-    backgroundColor: "#F0F0EC",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  dangerIcon: {
-    backgroundColor: "#FCEDEA",
   },
 
   rowContent: {
@@ -564,38 +814,28 @@ const styles = StyleSheet.create({
   rowTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#242424",
   },
 
   rowSubtitle: {
     marginTop: 3,
     fontSize: 11.5,
-    color: "#92928D",
-  },
-
-  dangerText: {
-    color: "#C0392B",
   },
 
   badge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 7,
-    backgroundColor: "#EEEEEA",
   },
 
   badgeText: {
     fontSize: 9,
     fontWeight: "700",
-    color: "#666",
   },
 
   appearanceCard: {
     overflow: "hidden",
-    borderRadius: 19,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E0E0DB",
-    backgroundColor: "#FFFFFF",
     paddingTop: 8,
   },
 
@@ -611,13 +851,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     padding: 4,
     borderRadius: 14,
-    backgroundColor: "#F0F0EC",
     flexDirection: "row",
   },
 
   themeOption: {
     flex: 1,
-    height: 37,
+    height: 38,
     borderRadius: 11,
     flexDirection: "row",
     alignItems: "center",
@@ -625,18 +864,9 @@ const styles = StyleSheet.create({
     gap: 5,
   },
 
-  themeOptionActive: {
-    backgroundColor: "#171717",
-  },
-
   themeText: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#70706B",
-  },
-
-  themeTextActive: {
-    color: "#FFFFFF",
   },
 
   accentRow: {
@@ -644,7 +874,6 @@ const styles = StyleSheet.create({
     marginTop: 7,
     paddingHorizontal: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E6E6E1",
     flexDirection: "row",
     alignItems: "center",
   },
@@ -653,7 +882,6 @@ const styles = StyleSheet.create({
     width: 39,
     height: 39,
     borderRadius: 12,
-    backgroundColor: "#171717",
   },
 
   version: {
@@ -663,10 +891,9 @@ const styles = StyleSheet.create({
   },
 
   versionLogo: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 11,
-    backgroundColor: "#171717",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 7,
@@ -675,12 +902,10 @@ const styles = StyleSheet.create({
   versionName: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#555",
   },
 
   versionText: {
     marginTop: 3,
     fontSize: 10,
-    color: "#A0A09A",
   },
 });

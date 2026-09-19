@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useTheme } from "../context/ThemeContext";
+
 type IconName = keyof typeof Ionicons.glyphMap;
 
 type Project = {
@@ -69,6 +71,8 @@ const initialProjects: Project[] = [
 ];
 
 export default function ProjectsPage() {
+  const { colors } = useTheme();
+
   const [projects, setProjects] =
     useState<Project[]>(initialProjects);
 
@@ -109,7 +113,7 @@ export default function ProjectsPage() {
       name,
       description:
         projectDescription.trim() ||
-        "A new Nova project.",
+        "A new Trilok-On project.",
       icon: "folder-outline",
       chats: 0,
       files: 0,
@@ -117,7 +121,10 @@ export default function ProjectsPage() {
       favorite: false,
     };
 
-    setProjects((current) => [newProject, ...current]);
+    setProjects((current) => [
+      newProject,
+      ...current,
+    ]);
 
     setProjectName("");
     setProjectDescription("");
@@ -147,13 +154,34 @@ export default function ProjectsPage() {
     });
   };
 
+  const closeCreateModal = () => {
+    setCreateVisible(false);
+  };
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <Stack.Screen options={{
-      headerTransparent:true,
-      headerShown:false
-    }}/>
-      <View style={styles.container}>
+    <SafeAreaView
+      style={[
+        styles.safe,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          headerShown: false,
+        }}
+      />
+
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
         <View style={styles.header}>
           <Pressable
             style={styles.headerButton}
@@ -162,53 +190,86 @@ export default function ProjectsPage() {
             <Ionicons
               name="arrow-back"
               size={22}
-              color="#171717"
+              color={colors.text}
             />
           </Pressable>
 
-          <Text style={styles.headerTitle}>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color: colors.text,
+              },
+            ]}
+          >
             Projects
           </Text>
 
           <Pressable
-            style={styles.newButton}
+            style={[
+              styles.newButton,
+              {
+                backgroundColor: colors.primary,
+              },
+            ]}
             onPress={() => setCreateVisible(true)}
           >
             <Ionicons
               name="add"
               size={18}
-              color="#FFFFFF"
+              color={colors.primaryText}
             />
 
-            <Text style={styles.newButtonText}>
+            <Text
+              style={[
+                styles.newButtonText,
+                {
+                  color: colors.primaryText,
+                },
+              ]}
+            >
               New
             </Text>
           </Pressable>
         </View>
 
-        <View style={styles.searchBox}>
+        <View
+          style={[
+            styles.searchBox,
+            {
+              backgroundColor: colors.input,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <Ionicons
             name="search-outline"
             size={18}
-            color="#888"
+            color={colors.textMuted}
           />
 
           <TextInput
             value={search}
             onChangeText={setSearch}
             placeholder="Search projects"
-            placeholderTextColor="#999"
-            style={styles.searchInput}
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.searchInput,
+              {
+                color: colors.text,
+              },
+            ]}
           />
 
           {search.length > 0 && (
             <Pressable
               onPress={() => setSearch("")}
+              hitSlop={8}
             >
               <Ionicons
                 name="close-circle"
                 size={18}
-                color="#999"
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -225,6 +286,7 @@ export default function ProjectsPage() {
               projects={favorites}
               onOpen={openProject}
               onFavorite={toggleFavorite}
+              colors={colors}
             />
           )}
 
@@ -234,38 +296,73 @@ export default function ProjectsPage() {
               projects={allProjects}
               onOpen={openProject}
               onFavorite={toggleFavorite}
+              colors={colors}
             />
           )}
 
           {filteredProjects.length === 0 && (
             <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
+              <View
+                style={[
+                  styles.emptyIcon,
+                  {
+                    backgroundColor:
+                      colors.surfaceSecondary,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="folder-open-outline"
                   size={26}
-                  color="#777"
+                  color={colors.textSecondary}
                 />
               </View>
 
-              <Text style={styles.emptyTitle}>
+              <Text
+                style={[
+                  styles.emptyTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
                 No projects found
               </Text>
 
-              <Text style={styles.emptyText}>
+              <Text
+                style={[
+                  styles.emptyText,
+                  {
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
                 Create a new project or try another search.
               </Text>
 
               <Pressable
-                style={styles.emptyButton}
+                style={[
+                  styles.emptyButton,
+                  {
+                    backgroundColor: colors.primary,
+                  },
+                ]}
                 onPress={() => setCreateVisible(true)}
               >
                 <Ionicons
                   name="add"
                   size={17}
-                  color="#FFFFFF"
+                  color={colors.primaryText}
                 />
 
-                <Text style={styles.emptyButtonText}>
+                <Text
+                  style={[
+                    styles.emptyButtonText,
+                    {
+                      color: colors.primaryText,
+                    },
+                  ]}
+                >
                   Create project
                 </Text>
               </Pressable>
@@ -278,48 +375,89 @@ export default function ProjectsPage() {
         visible={createVisible}
         transparent
         animationType="slide"
-        onRequestClose={() =>
-          setCreateVisible(false)
-        }
+        onRequestClose={closeCreateModal}
       >
         <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setCreateVisible(false)}
+          style={[
+            styles.modalOverlay,
+            {
+              backgroundColor: colors.overlay,
+            },
+          ]}
+          onPress={closeCreateModal}
         >
           <Pressable
-            style={styles.createSheet}
+            style={[
+              styles.createSheet,
+              {
+                backgroundColor: colors.background,
+              },
+            ]}
             onPress={(event) =>
               event.stopPropagation()
             }
           >
-            <View style={styles.handle} />
+            <View
+              style={[
+                styles.handle,
+                {
+                  backgroundColor: colors.border,
+                },
+              ]}
+            />
 
             <View style={styles.sheetHeader}>
-              <View>
-                <Text style={styles.sheetTitle}>
+              <View style={styles.sheetTitleContainer}>
+                <Text
+                  style={[
+                    styles.sheetTitle,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
+                >
                   New project
                 </Text>
 
-                <Text style={styles.sheetSubtitle}>
-                  Organize chats, files and work in one place.
+                <Text
+                  style={[
+                    styles.sheetSubtitle,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
+                  Organize chats, files and work in one
+                  place.
                 </Text>
               </View>
 
               <Pressable
-                style={styles.closeButton}
-                onPress={() =>
-                  setCreateVisible(false)
-                }
+                style={[
+                  styles.closeButton,
+                  {
+                    backgroundColor:
+                      colors.surfaceSecondary,
+                  },
+                ]}
+                onPress={closeCreateModal}
               >
                 <Ionicons
                   name="close"
                   size={20}
-                  color="#555"
+                  color={colors.textSecondary}
                 />
               </Pressable>
             </View>
 
-            <Text style={styles.inputLabel}>
+            <Text
+              style={[
+                styles.inputLabel,
+                {
+                  color: colors.textSecondary,
+                },
+              ]}
+            >
               Project name
             </Text>
 
@@ -327,12 +465,26 @@ export default function ProjectsPage() {
               value={projectName}
               onChangeText={setProjectName}
               placeholder="e.g. My AI Project"
-              placeholderTextColor="#A0A09A"
-              style={styles.textInput}
+              placeholderTextColor={colors.textMuted}
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: colors.input,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
               autoFocus
             />
 
-            <Text style={styles.inputLabel}>
+            <Text
+              style={[
+                styles.inputLabel,
+                {
+                  color: colors.textSecondary,
+                },
+              ]}
+            >
               Description
             </Text>
 
@@ -340,10 +492,15 @@ export default function ProjectsPage() {
               value={projectDescription}
               onChangeText={setProjectDescription}
               placeholder="What are you building?"
-              placeholderTextColor="#A0A09A"
+              placeholderTextColor={colors.textMuted}
               style={[
                 styles.textInput,
                 styles.descriptionInput,
+                {
+                  backgroundColor: colors.input,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
               ]}
               multiline
               textAlignVertical="top"
@@ -352,20 +509,30 @@ export default function ProjectsPage() {
             <Pressable
               style={[
                 styles.createButton,
+                {
+                  backgroundColor: colors.primary,
+                },
                 !projectName.trim() &&
                   styles.createButtonDisabled,
               ]}
               disabled={!projectName.trim()}
               onPress={createProject}
             >
-              <Text style={styles.createButtonText}>
+              <Text
+                style={[
+                  styles.createButtonText,
+                  {
+                    color: colors.primaryText,
+                  },
+                ]}
+              >
                 Create project
               </Text>
 
               <Ionicons
                 name="arrow-forward"
                 size={17}
-                color="#FFFFFF"
+                color={colors.primaryText}
               />
             </Pressable>
           </Pressable>
@@ -380,15 +547,38 @@ function ProjectSection({
   projects,
   onOpen,
   onFavorite,
+  colors,
 }: {
   title: string;
   projects: Project[];
   onOpen: (project: Project) => void;
   onFavorite: (id: string) => void;
+  colors: {
+    background: string;
+    surface: string;
+    surfaceSecondary: string;
+    text: string;
+    textSecondary: string;
+    textMuted: string;
+    border: string;
+    primary: string;
+    primaryText: string;
+    input: string;
+    card: string;
+    danger: string;
+    overlay: string;
+  };
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>
+      <Text
+        style={[
+          styles.sectionTitle,
+          {
+            color: colors.textMuted,
+          },
+        ]}
+      >
         {title}
       </Text>
 
@@ -398,16 +588,28 @@ function ProjectSection({
             key={project.id}
             style={({ pressed }) => [
               styles.projectCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
               pressed && styles.pressed,
             ]}
             onPress={() => onOpen(project)}
           >
             <View style={styles.cardTop}>
-              <View style={styles.projectIcon}>
+              <View
+                style={[
+                  styles.projectIcon,
+                  {
+                    backgroundColor:
+                      colors.surfaceSecondary,
+                  },
+                ]}
+              >
                 <Ionicons
                   name={project.icon}
                   size={21}
-                  color="#444"
+                  color={colors.textSecondary}
                 />
               </View>
 
@@ -427,22 +629,32 @@ function ProjectSection({
                   size={17}
                   color={
                     project.favorite
-                      ? "#555"
-                      : "#999"
+                      ? colors.text
+                      : colors.textMuted
                   }
                 />
               </Pressable>
             </View>
 
             <Text
-              style={styles.projectName}
+              style={[
+                styles.projectName,
+                {
+                  color: colors.text,
+                },
+              ]}
               numberOfLines={1}
             >
               {project.name}
             </Text>
 
             <Text
-              style={styles.projectDescription}
+              style={[
+                styles.projectDescription,
+                {
+                  color: colors.textMuted,
+                },
+              ]}
               numberOfLines={2}
             >
               {project.description}
@@ -453,10 +665,17 @@ function ProjectSection({
                 <Ionicons
                   name="chatbubble-outline"
                   size={12}
-                  color="#999"
+                  color={colors.textMuted}
                 />
 
-                <Text style={styles.statText}>
+                <Text
+                  style={[
+                    styles.statText,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
                   {project.chats}
                 </Text>
               </View>
@@ -465,15 +684,29 @@ function ProjectSection({
                 <Ionicons
                   name="document-outline"
                   size={12}
-                  color="#999"
+                  color={colors.textMuted}
                 />
 
-                <Text style={styles.statText}>
+                <Text
+                  style={[
+                    styles.statText,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
                   {project.files}
                 </Text>
               </View>
 
-              <Text style={styles.updated}>
+              <Text
+                style={[
+                  styles.updated,
+                  {
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
                 {project.updated}
               </Text>
             </View>
@@ -487,7 +720,6 @@ function ProjectSection({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F7F5",
   },
 
   container: {
@@ -512,14 +744,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#171717",
   },
 
   newButton: {
     height: 36,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: "#171717",
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -528,7 +758,6 @@ const styles = StyleSheet.create({
   newButtonText: {
     fontSize: 11.5,
     fontWeight: "700",
-    color: "#FFFFFF",
   },
 
   searchBox: {
@@ -537,8 +766,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E0E0DB",
-    backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
   },
@@ -547,7 +774,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 9,
     fontSize: 13,
-    color: "#222",
   },
 
   scroll: {
@@ -569,7 +795,6 @@ const styles = StyleSheet.create({
     marginBottom: 9,
     fontSize: 11,
     fontWeight: "700",
-    color: "#858580",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
@@ -586,12 +811,10 @@ const styles = StyleSheet.create({
     padding: 13,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E0E0DB",
-    backgroundColor: "#FFFFFF",
   },
 
   pressed: {
-    backgroundColor: "#F0F0EC",
+    opacity: 0.72,
     transform: [{ scale: 0.985 }],
   },
 
@@ -605,7 +828,6 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 13,
-    backgroundColor: "#F0F0EC",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -621,7 +843,6 @@ const styles = StyleSheet.create({
     marginTop: 13,
     fontSize: 14,
     fontWeight: "700",
-    color: "#252525",
   },
 
   projectDescription: {
@@ -629,7 +850,6 @@ const styles = StyleSheet.create({
     minHeight: 31,
     fontSize: 10.5,
     lineHeight: 15,
-    color: "#92928C",
   },
 
   cardBottom: {
@@ -648,13 +868,11 @@ const styles = StyleSheet.create({
 
   statText: {
     fontSize: 9.5,
-    color: "#888",
   },
 
   updated: {
     marginLeft: "auto",
     fontSize: 8.5,
-    color: "#A0A09A",
   },
 
   empty: {
@@ -667,7 +885,6 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 19,
-    backgroundColor: "#EAEAE5",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -676,13 +893,11 @@ const styles = StyleSheet.create({
     marginTop: 14,
     fontSize: 15,
     fontWeight: "700",
-    color: "#333",
   },
 
   emptyText: {
     marginTop: 5,
     fontSize: 11,
-    color: "#999",
     textAlign: "center",
   },
 
@@ -691,7 +906,6 @@ const styles = StyleSheet.create({
     marginTop: 17,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: "#171717",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -700,12 +914,10 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#FFFFFF",
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.28)",
     justifyContent: "flex-end",
   },
 
@@ -715,7 +927,6 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
-    backgroundColor: "#F7F7F5",
   },
 
   handle: {
@@ -723,7 +934,6 @@ const styles = StyleSheet.create({
     width: 38,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#C7C7C1",
     marginBottom: 17,
   },
 
@@ -733,10 +943,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  sheetTitleContainer: {
+    flex: 1,
+  },
+
   sheetTitle: {
     fontSize: 20,
     fontWeight: "750",
-    color: "#171717",
   },
 
   sheetSubtitle: {
@@ -744,14 +957,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 11,
     lineHeight: 16,
-    color: "#92928C",
   },
 
   closeButton: {
     width: 35,
     height: 35,
     borderRadius: 11,
-    backgroundColor: "#E8E8E3",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -761,7 +972,6 @@ const styles = StyleSheet.create({
     marginBottom: 7,
     fontSize: 11,
     fontWeight: "650",
-    color: "#555",
   },
 
   textInput: {
@@ -769,10 +979,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: "#DDDDD8",
-    backgroundColor: "#FFFFFF",
     fontSize: 13,
-    color: "#222",
   },
 
   descriptionInput: {
@@ -784,7 +991,6 @@ const styles = StyleSheet.create({
     height: 48,
     marginTop: 19,
     borderRadius: 14,
-    backgroundColor: "#171717",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -798,6 +1004,5 @@ const styles = StyleSheet.create({
   createButtonText: {
     fontSize: 12.5,
     fontWeight: "700",
-    color: "#FFFFFF",
   },
 });

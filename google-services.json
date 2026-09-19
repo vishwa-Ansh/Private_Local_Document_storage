@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "681818104251",
+    "project_id": "trilok-on",
+    "storage_bucket": "trilok-on.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:681818104251:android:c642842d60c0f0ed0b649e",
+        "android_client_info": {
+          "package_name": "com.vishwa_ansh.quick_access"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "681818104251-un00004lqim79920k6pitn7m671v31gi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkNy3txe6GgIYQQAvTiy1UZtpIBbQOvs4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "681818104251-un00004lqim79920k6pitn7m671v31gi.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

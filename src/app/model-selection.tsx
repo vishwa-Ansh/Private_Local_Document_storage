@@ -10,6 +10,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useTheme } from "../context/ThemeContext";
+
 type IconName = keyof typeof Ionicons.glyphMap;
 
 type Model = {
@@ -87,7 +89,10 @@ const models: Model[] = [
 ];
 
 export default function ModelSelectionPage() {
-  const [selectedModel, setSelectedModel] = useState("TL-1");
+  const { colors } = useTheme();
+
+  const [selectedModel, setSelectedModel] =
+    useState("TL-1");
 
   const selectModel = (model: Model) => {
     setSelectedModel(model.id);
@@ -101,12 +106,29 @@ export default function ModelSelectionPage() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-    <Stack.Screen options={{
-      headerTransparent:true,
-      headerShown:false
-    }}/>
-      <View style={styles.container}>
+    <SafeAreaView
+      style={[
+        styles.safe,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          headerShown: false,
+        }}
+      />
+
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
         <View style={styles.header}>
           <Pressable
             style={styles.backButton}
@@ -115,11 +137,18 @@ export default function ModelSelectionPage() {
             <Ionicons
               name="arrow-back"
               size={22}
-              color="#171717"
+              color={colors.text}
             />
           </Pressable>
 
-          <Text style={styles.headerTitle}>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color: colors.text,
+              },
+            ]}
+          >
             Choose model
           </Text>
 
@@ -132,11 +161,25 @@ export default function ModelSelectionPage() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.intro}>
-            <Text style={styles.introTitle}>
+            <Text
+              style={[
+                styles.introTitle,
+                {
+                  color: colors.text,
+                },
+              ]}
+            >
               Select your AI
             </Text>
 
-            <Text style={styles.introText}>
+            <Text
+              style={[
+                styles.introText,
+                {
+                  color: colors.textMuted,
+                },
+              ]}
+            >
               Different models are optimized for different
               types of work.
             </Text>
@@ -144,14 +187,23 @@ export default function ModelSelectionPage() {
 
           <View style={styles.modelList}>
             {models.map((model) => {
-              const selected = selectedModel === model.id;
+              const selected =
+                selectedModel === model.id;
 
               return (
                 <Pressable
                   key={model.id}
                   style={({ pressed }) => [
                     styles.modelCard,
-                    selected && styles.selectedCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                    selected && {
+                      borderColor: colors.primary,
+                      backgroundColor:
+                        colors.surfaceSecondary,
+                    },
                     pressed && styles.pressed,
                   ]}
                   onPress={() => selectModel(model)}
@@ -160,19 +212,37 @@ export default function ModelSelectionPage() {
                     <View
                       style={[
                         styles.modelIcon,
-                        selected && styles.selectedModelIcon,
+                        {
+                          backgroundColor:
+                            colors.surfaceSecondary,
+                        },
+                        selected && {
+                          backgroundColor:
+                            colors.primary,
+                        },
                       ]}
                     >
                       <Ionicons
                         name={model.icon}
                         size={20}
-                        color={selected ? "#FFFFFF" : "#444"}
+                        color={
+                          selected
+                            ? colors.primaryText
+                            : colors.textSecondary
+                        }
                       />
                     </View>
 
                     <View style={styles.modelInfo}>
                       <View style={styles.nameRow}>
-                        <Text style={styles.modelName}>
+                        <Text
+                          style={[
+                            styles.modelName,
+                            {
+                              color: colors.text,
+                            },
+                          ]}
+                        >
                           {model.name}
                         </Text>
 
@@ -180,14 +250,23 @@ export default function ModelSelectionPage() {
                           <View
                             style={[
                               styles.badge,
-                              selected && styles.selectedBadge,
+                              {
+                                backgroundColor:
+                                  colors.surfaceSecondary,
+                              },
+                              selected && {
+                                backgroundColor:
+                                  colors.border,
+                              },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.badgeText,
-                                selected &&
-                                  styles.selectedBadgeText,
+                                {
+                                  color:
+                                    colors.textSecondary,
+                                },
                               ]}
                             >
                               {model.badge}
@@ -196,7 +275,14 @@ export default function ModelSelectionPage() {
                         )}
                       </View>
 
-                      <Text style={styles.description}>
+                      <Text
+                        style={[
+                          styles.description,
+                          {
+                            color: colors.textMuted,
+                          },
+                        ]}
+                      >
                         {model.description}
                       </Text>
                     </View>
@@ -204,32 +290,72 @@ export default function ModelSelectionPage() {
                     <View
                       style={[
                         styles.radio,
-                        selected && styles.radioSelected,
+                        {
+                          borderColor: colors.border,
+                        },
+                        selected && {
+                          borderColor:
+                            colors.primary,
+                        },
                       ]}
                     >
                       {selected && (
-                        <View style={styles.radioDot} />
+                        <View
+                          style={[
+                            styles.radioDot,
+                            {
+                              backgroundColor:
+                                colors.primary,
+                            },
+                          ]}
+                        />
                       )}
                     </View>
                   </View>
 
-                  <View style={styles.metrics}>
+                  <View
+                    style={[
+                      styles.metrics,
+                      {
+                        borderTopColor:
+                          colors.border,
+                      },
+                    ]}
+                  >
                     <Metric
                       label="Speed"
                       value={model.speed}
+                      colors={colors}
                     />
 
                     <Metric
                       label="Intelligence"
                       value={model.intelligence}
+                      colors={colors}
                     />
 
                     <View style={styles.context}>
-                      <Text style={styles.metricLabel}>
+                      <Text
+                        style={[
+                          styles.metricLabel,
+                          {
+                            color:
+                              colors.textMuted,
+                          },
+                        ]}
+                      >
                         Context
                       </Text>
 
-                      <Text style={styles.contextValue}>
+                      <Text
+                        style={[
+                          styles.contextValue,
+                          {
+                            color:
+                              colors.textSecondary,
+                          },
+                        ]}
+                      >
                         {model.context}
                       </Text>
                     </View>
@@ -243,11 +369,19 @@ export default function ModelSelectionPage() {
             <Ionicons
               name="information-circle-outline"
               size={17}
-              color="#8D8D87"
+              color={colors.textMuted}
             />
 
-            <Text style={styles.infoText}>
-              Model availability and limits may vary by plan.
+            <Text
+              style={[
+                styles.infoText,
+                {
+                  color: colors.textMuted,
+                },
+              ]}
+            >
+              Model availability and limits may vary by
+              plan.
             </Text>
           </View>
         </ScrollView>
@@ -259,13 +393,36 @@ export default function ModelSelectionPage() {
 function Metric({
   label,
   value,
+  colors,
 }: {
   label: string;
   value: number;
+  colors: {
+    background: string;
+    surface: string;
+    surfaceSecondary: string;
+    text: string;
+    textSecondary: string;
+    textMuted: string;
+    border: string;
+    primary: string;
+    primaryText: string;
+    input: string;
+    card: string;
+    danger: string;
+    overlay: string;
+  };
 }) {
   return (
     <View style={styles.metric}>
-      <Text style={styles.metricLabel}>
+      <Text
+        style={[
+          styles.metricLabel,
+          {
+            color: colors.textMuted,
+          },
+        ]}
+      >
         {label}
       </Text>
 
@@ -275,7 +432,13 @@ function Metric({
             key={item}
             style={[
               styles.bar,
-              item <= value && styles.activeBar,
+              {
+                backgroundColor: colors.border,
+              },
+              item <= value && {
+                backgroundColor:
+                  colors.textSecondary,
+              },
             ]}
           />
         ))}
@@ -287,7 +450,6 @@ function Metric({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F7F5",
   },
 
   container: {
@@ -312,7 +474,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#171717",
   },
 
   headerSpace: {
@@ -337,7 +498,6 @@ const styles = StyleSheet.create({
   introTitle: {
     fontSize: 23,
     fontWeight: "700",
-    color: "#171717",
     letterSpacing: -0.4,
   },
 
@@ -346,7 +506,6 @@ const styles = StyleSheet.create({
     maxWidth: 330,
     fontSize: 12,
     lineHeight: 18,
-    color: "#898983",
   },
 
   modelList: {
@@ -357,13 +516,6 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 19,
     borderWidth: 1,
-    borderColor: "#E0E0DB",
-    backgroundColor: "#FFFFFF",
-  },
-
-  selectedCard: {
-    borderColor: "#303030",
-    backgroundColor: "#FAFAF8",
   },
 
   pressed: {
@@ -379,13 +531,8 @@ const styles = StyleSheet.create({
     width: 43,
     height: 43,
     borderRadius: 13,
-    backgroundColor: "#F0F0EC",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  selectedModelIcon: {
-    backgroundColor: "#171717",
   },
 
   modelInfo: {
@@ -404,35 +551,23 @@ const styles = StyleSheet.create({
   modelName: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#242424",
   },
 
   badge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 7,
-    backgroundColor: "#EEEEEA",
-  },
-
-  selectedBadge: {
-    backgroundColor: "#E5E5E1",
   },
 
   badgeText: {
     fontSize: 8.5,
     fontWeight: "700",
-    color: "#777",
-  },
-
-  selectedBadgeText: {
-    color: "#444",
   },
 
   description: {
     marginTop: 5,
     fontSize: 10.5,
     lineHeight: 15,
-    color: "#91918B",
   },
 
   radio: {
@@ -440,27 +575,20 @@ const styles = StyleSheet.create({
     height: 21,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: "#C5C5BF",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  radioSelected: {
-    borderColor: "#171717",
   },
 
   radioDot: {
     width: 11,
     height: 11,
     borderRadius: 6,
-    backgroundColor: "#171717",
   },
 
   metrics: {
     marginTop: 15,
     paddingTop: 13,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#E4E4DF",
     flexDirection: "row",
     alignItems: "center",
   },
@@ -471,7 +599,6 @@ const styles = StyleSheet.create({
 
   metricLabel: {
     fontSize: 9.5,
-    color: "#999",
   },
 
   bars: {
@@ -484,11 +611,6 @@ const styles = StyleSheet.create({
     width: 15,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#E2E2DD",
-  },
-
-  activeBar: {
-    backgroundColor: "#555",
   },
 
   context: {
@@ -500,7 +622,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontSize: 10.5,
     fontWeight: "700",
-    color: "#555",
   },
 
   info: {
@@ -515,6 +636,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 10.5,
     lineHeight: 15,
-    color: "#999",
   },
 });

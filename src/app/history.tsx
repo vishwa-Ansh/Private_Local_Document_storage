@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, Stack } from "expo-router";
-import { useMemo, useState } from "react";
+import { router, Stack, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -13,7 +13,16 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type Chat = {
+import { useTheme } from "../context/ThemeContext";
+import {
+  cleanupOldChats,
+  deleteChat as deleteChatFromDatabase,
+  getChats,
+  getMessages,
+  renameChat as renameChatInDatabase,
+} from "../lib/chatDatabase";
+
+type HistoryChat = {
   id: string;
   title: string;
   preview: string;
@@ -21,52 +30,64 @@ type Chat = {
   pinned?: boolean;
 };
 
-const initialChats: Chat[] = [
-  {
-    id: "1",
-    title: "Machine Learning Roadmap",
-    preview: "Explain machine learning from basics to advanced...",
-    time: "Today",
-    pinned: true,
-  },
-  {
-    id: "2",
-    title: "React Native App",
-    preview: "How can I create a premium chat interface?",
-    time: "Yesterday",
-  },
-  {
-    id: "3",
-    title: "Neural Networks",
-    preview: "Explain backpropagation with mathematics...",
-    time: "Yesterday",
-  },
-  {
-    id: "4",
-    title: "Python Data Analysis",
-    preview: "Let's start learning NumPy step by step...",
-    time: "Sep 16",
-  },
-  {
-    id: "5",
-    title: "Linear Regression",
-    preview: "Explain gradient descent and normal equation...",
-    time: "Sep 15",
-  },
-  {
-    id: "6",
-    title: "CNN Architecture",
-    preview: "What are filters, kernels and feature maps?",
-    time: "Sep 14",
-  },
-];
-
 export default function HistoryScreen() {
-  const [chats, setChats] = useState<Chat[]>(initialChats);
+  const { colors } = useTheme();
+
+  const [chats, setChats] = useState<HistoryChat[]>([]);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "pinned">("all");
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
+  const [selectedChat, setSelectedChat] =
+    useState<HistoryChat | null>(null);
   const [actionVisible, setActionVisible] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+
+      const loadHistory = async () => {
+        try {
+          await cleanupOldChats();
+
+          const storedChats = await getChats();
+
+          if (!mounted) return;
+
+          const historyChats: HistoryChat[] = [];
+
+          for (const chat of storedChats) {
+            const messages = await getMessages(chat.id);
+
+            const lastUserMessage = [...messages]
+              .reverse()
+              .find((item) => item.role === "user");
+
+            historyChats.push({
+              id: chat.id,
+              title: chat.title,
+              preview:
+                lastUserMessage?.content || "No messages",
+              time: formatChatTime(chat.updatedAt),
+            });
+          }
+
+          if (mounted) {
+            setChats(historyChats);
+          }
+        } catch (error) {
+          console.error(
+            "LOAD HISTORY ERROR:",
+            error
+          );
+        }
+      };
+
+      loadHistory();
+
+      return () => {
+        mounted = false;
+      };
+    }, [])
+  );
 
   const filteredChats = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -84,7 +105,7 @@ export default function HistoryScreen() {
     });
   }, [chats, search, activeTab]);
 
-  const openMenu = (chat: Chat) => {
+  const openMenu = (chat: HistoryChat) => {
     setSelectedChat(chat);
     setActionVisible(true);
   };
@@ -99,9 +120,21 @@ export default function HistoryScreen() {
     setChats((current) =>
       current.map((chat) =>
         chat.id === selectedChat.id
-          ? { ...chat, pinned: !chat.pinned }
+          ? {
+              ...chat,
+              pinned: !chat.pinned,
+            }
           : chat
       )
+    );
+
+    setSelectedChat((current) =>
+      current
+        ? {
+            ...current,
+            pinned: !current.pinned,
+          }
+        : null
     );
 
     closeMenu();
@@ -120,18 +153,42 @@ export default function HistoryScreen() {
         },
         {
           text: "Save",
-          onPress: (value) => {
+          onPress: async (value) => {
             const title = value?.trim();
 
             if (!title) return;
 
-            setChats((current) =>
-              current.map((chat) =>
-                chat.id === selectedChat.id
-                  ? { ...chat, title }
-                  : chat
-              )
-            );
+            try {
+              await renameChatInDatabase(
+                selectedChat.id,
+                title
+              );
+
+              setChats((current) =>
+                current.map((chat) =>
+                  chat.id === selectedChat.id
+                    ? {
+                        ...chat,
+                        title,
+                      }
+                    : chat
+                )
+              );
+
+              setSelectedChat((current) =>
+                current
+                  ? {
+                      ...current,
+                      title,
+                    }
+                  : null
+              );
+            } catch (error) {
+              console.error(
+                "RENAME CHAT ERROR:",
+                error
+              );
+            }
           },
         },
       ],
@@ -146,7 +203,9 @@ export default function HistoryScreen() {
     if (!selectedChat) return;
 
     setChats((current) =>
-      current.filter((chat) => chat.id !== selectedChat.id)
+      current.filter(
+        (chat) => chat.id !== selectedChat.id
+      )
     );
 
     closeMenu();
@@ -177,18 +236,34 @@ export default function HistoryScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            setChats((current) =>
-              current.filter((chat) => chat.id !== selectedChat.id)
-            );
-            closeMenu();
+          onPress: async () => {
+            try {
+              await deleteChatFromDatabase(
+                selectedChat.id
+              );
+
+              setChats((current) =>
+                current.filter(
+                  (chat) =>
+                    chat.id !== selectedChat.id
+                )
+              );
+
+              setSelectedChat(null);
+              closeMenu();
+            } catch (error) {
+              console.error(
+                "DELETE CHAT ERROR:",
+                error
+              );
+            }
           },
         },
       ]
     );
   };
 
-  const openChat = (chat: Chat) => {
+  const openChat = (chat: HistoryChat) => {
     router.push({
       pathname: "/",
       params: {
@@ -198,57 +273,115 @@ export default function HistoryScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <Stack.Screen options={{
-        headerTransparent: true,
-        headerShown: false
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          headerShown: false,
+        }}
+      />
 
-      }} />
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
         <View style={styles.header}>
           <Pressable
-            style={styles.headerButton}
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
             onPress={() => router.back()}
           >
             <Ionicons
               name="chevron-back"
               size={22}
-              color="#111"
+              color={colors.text}
             />
           </Pressable>
 
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>History</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text
+              style={[
+                styles.headerTitle,
+                {
+                  color: colors.text,
+                },
+              ]}
+            >
+              History
+            </Text>
+
+            <Text
+              style={[
+                styles.headerSubtitle,
+                {
+                  color: colors.textMuted,
+                },
+              ]}
+            >
               Your conversations
             </Text>
           </View>
 
           <Pressable
-            style={styles.headerButton}
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
             onPress={() => router.replace("/")}
           >
             <Ionicons
               name="create-outline"
               size={21}
-              color="#111"
+              color={colors.text}
             />
           </Pressable>
         </View>
 
-        <View style={styles.searchWrapper}>
+        <View
+          style={[
+            styles.searchWrapper,
+            {
+              backgroundColor: colors.input,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <Ionicons
             name="search"
             size={19}
-            color="#8C8C8C"
+            color={colors.textMuted}
           />
 
           <TextInput
             value={search}
             onChangeText={setSearch}
             placeholder="Search conversations"
-            placeholderTextColor="#A3A3A3"
-            style={styles.searchInput}
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.searchInput,
+              {
+                color: colors.text,
+              },
+            ]}
             returnKeyType="search"
           />
 
@@ -260,7 +393,7 @@ export default function HistoryScreen() {
               <Ionicons
                 name="close-circle"
                 size={18}
-                color="#A0A0A0"
+                color={colors.textMuted}
               />
             </Pressable>
           )}
@@ -270,14 +403,21 @@ export default function HistoryScreen() {
           <Pressable
             style={[
               styles.tab,
-              activeTab === "all" && styles.activeTab,
+              activeTab === "all" && {
+                backgroundColor: colors.primary,
+              },
             ]}
             onPress={() => setActiveTab("all")}
           >
             <Text
               style={[
                 styles.tabText,
-                activeTab === "all" && styles.activeTabText,
+                {
+                  color:
+                    activeTab === "all"
+                      ? colors.primaryText
+                      : colors.textSecondary,
+                },
               ]}
             >
               All
@@ -287,7 +427,9 @@ export default function HistoryScreen() {
           <Pressable
             style={[
               styles.tab,
-              activeTab === "pinned" && styles.activeTab,
+              activeTab === "pinned" && {
+                backgroundColor: colors.primary,
+              },
             ]}
             onPress={() => setActiveTab("pinned")}
           >
@@ -295,14 +437,21 @@ export default function HistoryScreen() {
               name="pin-outline"
               size={15}
               color={
-                activeTab === "pinned" ? "#111" : "#888"
+                activeTab === "pinned"
+                  ? colors.primaryText
+                  : colors.textSecondary
               }
             />
 
             <Text
               style={[
                 styles.tabText,
-                activeTab === "pinned" && styles.activeTabText,
+                {
+                  color:
+                    activeTab === "pinned"
+                      ? colors.primaryText
+                      : colors.textSecondary,
+                },
               ]}
             >
               Pinned
@@ -318,33 +467,67 @@ export default function HistoryScreen() {
         >
           {filteredChats.length === 0 ? (
             <View style={styles.emptyState}>
-              <View style={styles.emptyIcon}>
+              <View
+                style={[
+                  styles.emptyIcon,
+                  {
+                    backgroundColor:
+                      colors.surfaceSecondary,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="chatbubble-ellipses-outline"
                   size={27}
-                  color="#777"
+                  color={colors.textSecondary}
                 />
               </View>
 
-              <Text style={styles.emptyTitle}>
+              <Text
+                style={[
+                  styles.emptyTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
                 No conversations found
               </Text>
 
-              <Text style={styles.emptyText}>
+              <Text
+                style={[
+                  styles.emptyText,
+                  {
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
                 Try another search or start a new conversation.
               </Text>
 
               <Pressable
-                style={styles.emptyButton}
+                style={[
+                  styles.emptyButton,
+                  {
+                    backgroundColor: colors.primary,
+                  },
+                ]}
                 onPress={() => router.replace("/")}
               >
                 <Ionicons
                   name="add"
                   size={18}
-                  color="#FFF"
+                  color={colors.primaryText}
                 />
 
-                <Text style={styles.emptyButtonText}>
+                <Text
+                  style={[
+                    styles.emptyButtonText,
+                    {
+                      color: colors.primaryText,
+                    },
+                  ]}
+                >
                   New conversation
                 </Text>
               </Pressable>
@@ -352,13 +535,29 @@ export default function HistoryScreen() {
           ) : (
             <>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
+                >
                   {activeTab === "pinned"
                     ? "Pinned conversations"
                     : "Recent conversations"}
                 </Text>
 
-                <Text style={styles.count}>
+                <Text
+                  style={[
+                    styles.count,
+                    {
+                      backgroundColor:
+                        colors.surfaceSecondary,
+                      color: colors.textSecondary,
+                    },
+                  ]}
+                >
                   {filteredChats.length}
                 </Text>
               </View>
@@ -369,46 +568,97 @@ export default function HistoryScreen() {
                     key={chat.id}
                     style={({ pressed }) => [
                       styles.chatCard,
-                      pressed && styles.chatCardPressed,
+                      {
+                        backgroundColor:
+                          colors.card,
+                        borderColor:
+                          colors.border,
+                      },
+                      pressed &&
+                        styles.chatCardPressed,
                     ]}
                     onPress={() => openChat(chat)}
-                    onLongPress={() => openMenu(chat)}
+                    onLongPress={() =>
+                      openMenu(chat)
+                    }
                   >
-                    <View style={styles.chatIcon}>
+                    <View
+                      style={[
+                        styles.chatIcon,
+                        {
+                          backgroundColor:
+                            colors.surfaceSecondary,
+                        },
+                      ]}
+                    >
                       <Ionicons
                         name="chatbubble-outline"
                         size={19}
-                        color="#555"
+                        color={
+                          colors.textSecondary
+                        }
                       />
                     </View>
 
-                    <View style={styles.chatContent}>
-                      <View style={styles.titleRow}>
-                        <View style={styles.titleContainer}>
+                    <View
+                      style={styles.chatContent}
+                    >
+                      <View
+                        style={styles.titleRow}
+                      >
+                        <View
+                          style={
+                            styles.titleContainer
+                          }
+                        >
                           {chat.pinned && (
                             <Ionicons
                               name="pin"
                               size={13}
-                              color="#777"
-                              style={styles.pinIcon}
+                              color={
+                                colors.textMuted
+                              }
+                              style={
+                                styles.pinIcon
+                              }
                             />
                           )}
 
                           <Text
-                            style={styles.chatTitle}
+                            style={[
+                              styles.chatTitle,
+                              {
+                                color:
+                                  colors.text,
+                              },
+                            ]}
                             numberOfLines={1}
                           >
                             {chat.title}
                           </Text>
                         </View>
 
-                        <Text style={styles.chatTime}>
+                        <Text
+                          style={[
+                            styles.chatTime,
+                            {
+                              color:
+                                colors.textMuted,
+                            },
+                          ]}
+                        >
                           {chat.time}
                         </Text>
                       </View>
 
                       <Text
-                        style={styles.chatPreview}
+                        style={[
+                          styles.chatPreview,
+                          {
+                            color:
+                              colors.textSecondary,
+                          },
+                        ]}
                         numberOfLines={2}
                       >
                         {chat.preview}
@@ -421,10 +671,45 @@ export default function HistoryScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Trilok-On</Text>
-          <View style={styles.footerDot} />
-          <Text style={styles.footerStatus}>AI Assistant</Text>
+        <View
+          style={[
+            styles.footer,
+            {
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.footerText,
+              {
+                color: colors.textSecondary,
+              },
+            ]}
+          >
+            Trilok-On
+          </Text>
+
+          <View
+            style={[
+              styles.footerDot,
+              {
+                backgroundColor:
+                  colors.textMuted,
+              },
+            ]}
+          />
+
+          <Text
+            style={[
+              styles.footerStatus,
+              {
+                color: colors.textMuted,
+              },
+            ]}
+          >
+            AI Assistant
+          </Text>
         </View>
 
         <Modal
@@ -434,56 +719,129 @@ export default function HistoryScreen() {
           onRequestClose={closeMenu}
         >
           <Pressable
-            style={styles.modalOverlay}
+            style={[
+              styles.modalOverlay,
+              {
+                backgroundColor:
+                  colors.overlay,
+              },
+            ]}
             onPress={closeMenu}
           >
             <Pressable
-              style={styles.actionSheet}
-              onPress={(event) => event.stopPropagation()}
+              style={[
+                styles.actionSheet,
+                {
+                  backgroundColor:
+                    colors.background,
+                },
+              ]}
+              onPress={(event) =>
+                event.stopPropagation()
+              }
             >
-              <View style={styles.sheetHandle} />
+              <View
+                style={[
+                  styles.sheetHandle,
+                  {
+                    backgroundColor:
+                      colors.border,
+                  },
+                ]}
+              />
 
-              <View style={styles.sheetHeader}>
-                <View style={styles.sheetChatIcon}>
+              <View
+                style={styles.sheetHeader}
+              >
+                <View
+                  style={[
+                    styles.sheetChatIcon,
+                    {
+                      backgroundColor:
+                        colors.surfaceSecondary,
+                    },
+                  ]}
+                >
                   <Ionicons
                     name="chatbubble-outline"
                     size={19}
-                    color="#555"
+                    color={
+                      colors.textSecondary
+                    }
                   />
                 </View>
 
-                <View style={styles.sheetTitleContainer}>
+                <View
+                  style={
+                    styles.sheetTitleContainer
+                  }
+                >
                   <Text
-                    style={styles.sheetTitle}
+                    style={[
+                      styles.sheetTitle,
+                      {
+                        color:
+                          colors.text,
+                      },
+                    ]}
                     numberOfLines={1}
                   >
                     {selectedChat?.title}
                   </Text>
 
-                  <Text style={styles.sheetSubtitle}>
+                  <Text
+                    style={[
+                      styles.sheetSubtitle,
+                      {
+                        color:
+                          colors.textMuted,
+                      },
+                    ]}
+                  >
                     Conversation options
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.actionList}>
+              <View
+                style={[
+                  styles.actionList,
+                  {
+                    backgroundColor:
+                      colors.surface,
+                    borderColor:
+                      colors.border,
+                  },
+                ]}
+              >
                 <Pressable
                   style={styles.actionItem}
                   onPress={pinChat}
                 >
-                  <View style={styles.actionIcon}>
+                  <View
+                    style={[
+                      styles.actionIcon,
+                      {
+                        backgroundColor:
+                          colors.surfaceSecondary,
+                      },
+                    ]}
+                  >
                     <Ionicons
-                      name={
-                        selectedChat?.pinned
-                          ? "pin-outline"
-                          : "pin-outline"
-                      }
+                      name="pin-outline"
                       size={20}
-                      color="#333"
+                      color={colors.text}
                     />
                   </View>
 
-                  <Text style={styles.actionText}>
+                  <Text
+                    style={[
+                      styles.actionText,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
                     {selectedChat?.pinned
                       ? "Unpin conversation"
                       : "Pin conversation"}
@@ -494,15 +852,30 @@ export default function HistoryScreen() {
                   style={styles.actionItem}
                   onPress={renameChat}
                 >
-                  <View style={styles.actionIcon}>
+                  <View
+                    style={[
+                      styles.actionIcon,
+                      {
+                        backgroundColor:
+                          colors.surfaceSecondary,
+                      },
+                    ]}
+                  >
                     <Ionicons
                       name="pencil-outline"
                       size={20}
-                      color="#333"
+                      color={colors.text}
                     />
                   </View>
 
-                  <Text style={styles.actionText}>
+                  <Text
+                    style={[
+                      styles.actionText,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
                     Rename
                   </Text>
                 </Pressable>
@@ -511,15 +884,30 @@ export default function HistoryScreen() {
                   style={styles.actionItem}
                   onPress={archiveChat}
                 >
-                  <View style={styles.actionIcon}>
+                  <View
+                    style={[
+                      styles.actionIcon,
+                      {
+                        backgroundColor:
+                          colors.surfaceSecondary,
+                      },
+                    ]}
+                  >
                     <Ionicons
                       name="archive-outline"
                       size={20}
-                      color="#333"
+                      color={colors.text}
                     />
                   </View>
 
-                  <Text style={styles.actionText}>
+                  <Text
+                    style={[
+                      styles.actionText,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
                     Archive
                   </Text>
                 </Pressable>
@@ -528,20 +916,43 @@ export default function HistoryScreen() {
                   style={styles.actionItem}
                   onPress={shareChat}
                 >
-                  <View style={styles.actionIcon}>
+                  <View
+                    style={[
+                      styles.actionIcon,
+                      {
+                        backgroundColor:
+                          colors.surfaceSecondary,
+                      },
+                    ]}
+                  >
                     <Ionicons
                       name="share-outline"
                       size={20}
-                      color="#333"
+                      color={colors.text}
                     />
                   </View>
 
-                  <Text style={styles.actionText}>
+                  <Text
+                    style={[
+                      styles.actionText,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
                     Share
                   </Text>
                 </Pressable>
 
-                <View style={styles.divider} />
+                <View
+                  style={[
+                    styles.divider,
+                    {
+                      backgroundColor:
+                        colors.border,
+                    },
+                  ]}
+                />
 
                 <Pressable
                   style={styles.actionItem}
@@ -556,7 +967,7 @@ export default function HistoryScreen() {
                     <Ionicons
                       name="trash-outline"
                       size={20}
-                      color="#C62828"
+                      color={colors.danger}
                     />
                   </View>
 
@@ -564,6 +975,9 @@ export default function HistoryScreen() {
                     style={[
                       styles.actionText,
                       styles.deleteText,
+                      {
+                        color: colors.danger,
+                      },
                     ]}
                   >
                     Delete conversation
@@ -572,10 +986,25 @@ export default function HistoryScreen() {
               </View>
 
               <Pressable
-                style={styles.cancelButton}
+                style={[
+                  styles.cancelButton,
+                  {
+                    backgroundColor:
+                      colors.surface,
+                    borderColor:
+                      colors.border,
+                  },
+                ]}
                 onPress={closeMenu}
               >
-                <Text style={styles.cancelText}>
+                <Text
+                  style={[
+                    styles.cancelText,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
+                >
                   Cancel
                 </Text>
               </Pressable>
@@ -587,15 +1016,47 @@ export default function HistoryScreen() {
   );
 }
 
+function formatChatTime(timestamp: number) {
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (sameDay) {
+    return "Today";
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+
+  const isYesterday =
+    date.getFullYear() ===
+      yesterday.getFullYear() &&
+    date.getMonth() ===
+      yesterday.getMonth() &&
+    date.getDate() ===
+      yesterday.getDate();
+
+  if (isYesterday) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#F7F7F5",
   },
 
   container: {
     flex: 1,
-    backgroundColor: "#F7F7F5",
   },
 
   header: {
@@ -612,9 +1073,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E9E9E6",
   },
 
   headerCenter: {
@@ -625,14 +1084,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#111",
     letterSpacing: -0.4,
   },
 
   headerSubtitle: {
     marginTop: 2,
     fontSize: 11,
-    color: "#999",
     fontWeight: "500",
   },
 
@@ -643,16 +1100,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E8E8E5",
   },
 
   searchInput: {
     flex: 1,
     marginLeft: 10,
     fontSize: 15,
-    color: "#111",
     paddingVertical: 0,
   },
 
@@ -673,18 +1127,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
-  activeTab: {
-    backgroundColor: "#111",
-  },
-
   tabText: {
     fontSize: 13,
-    color: "#888",
     fontWeight: "600",
-  },
-
-  activeTabText: {
-    color: "#FFF",
   },
 
   scroll: {
@@ -706,7 +1151,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#222",
   },
 
   count: {
@@ -715,8 +1159,6 @@ const styles = StyleSheet.create({
     height: 22,
     paddingHorizontal: 6,
     borderRadius: 11,
-    backgroundColor: "#EAEAE7",
-    color: "#777",
     fontSize: 11,
     fontWeight: "700",
     textAlign: "center",
@@ -732,11 +1174,9 @@ const styles = StyleSheet.create({
     minHeight: 86,
     padding: 14,
     borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E9E9E6",
     flexDirection: "row",
     alignItems: "flex-start",
+    borderWidth: 1,
   },
 
   chatCardPressed: {
@@ -748,7 +1188,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 13,
-    backgroundColor: "#F3F3F0",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -781,13 +1220,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     lineHeight: 20,
-    color: "#171717",
     fontWeight: "700",
   },
 
   chatTime: {
     fontSize: 11,
-    color: "#999",
     fontWeight: "500",
   },
 
@@ -795,7 +1232,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontSize: 12.5,
     lineHeight: 18,
-    color: "#8A8A8A",
     fontWeight: "400",
   },
 
@@ -809,7 +1245,6 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 22,
-    backgroundColor: "#ECECE9",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 18,
@@ -817,7 +1252,6 @@ const styles = StyleSheet.create({
 
   emptyTitle: {
     fontSize: 17,
-    color: "#222",
     fontWeight: "700",
   },
 
@@ -825,7 +1259,6 @@ const styles = StyleSheet.create({
     marginTop: 7,
     fontSize: 13,
     lineHeight: 19,
-    color: "#929292",
     textAlign: "center",
   },
 
@@ -834,14 +1267,12 @@ const styles = StyleSheet.create({
     height: 44,
     paddingHorizontal: 17,
     borderRadius: 14,
-    backgroundColor: "#111",
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
   },
 
   emptyButtonText: {
-    color: "#FFF",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -853,12 +1284,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 7,
     borderTopWidth: 1,
-    borderTopColor: "#EAEAE7",
   },
 
   footerText: {
     fontSize: 12,
-    color: "#555",
     fontWeight: "700",
   },
 
@@ -866,23 +1295,19 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#AAA",
   },
 
   footerStatus: {
     fontSize: 11,
-    color: "#999",
     fontWeight: "500",
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.32)",
     justifyContent: "flex-end",
   },
 
   actionSheet: {
-    backgroundColor: "#F7F7F5",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 18,
@@ -894,7 +1319,6 @@ const styles = StyleSheet.create({
     width: 38,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#D0D0CD",
     alignSelf: "center",
     marginBottom: 20,
   },
@@ -910,7 +1334,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "#EAEAE7",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -922,23 +1345,19 @@ const styles = StyleSheet.create({
 
   sheetTitle: {
     fontSize: 15,
-    color: "#181818",
     fontWeight: "700",
   },
 
   sheetSubtitle: {
     marginTop: 3,
     fontSize: 11,
-    color: "#999",
     fontWeight: "500",
   },
 
   actionList: {
-    backgroundColor: "#FFF",
     borderRadius: 20,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: "#E8E8E5",
   },
 
   actionItem: {
@@ -952,7 +1371,6 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 11,
-    backgroundColor: "#F4F4F1",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -960,38 +1378,33 @@ const styles = StyleSheet.create({
 
   actionText: {
     fontSize: 14,
-    color: "#222",
     fontWeight: "600",
   },
 
   divider: {
     height: 1,
-    backgroundColor: "#EEEEEB",
     marginHorizontal: 14,
   },
 
   deleteIcon: {
-    backgroundColor: "#FFF1F1",
+    backgroundColor: "rgba(217,45,32,0.10)",
   },
 
   deleteText: {
-    color: "#C62828",
+    fontWeight: "600",
   },
 
   cancelButton: {
     height: 52,
     marginTop: 10,
     borderRadius: 18,
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#E8E8E5",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
 
   cancelText: {
     fontSize: 14,
-    color: "#222",
     fontWeight: "700",
   },
 });

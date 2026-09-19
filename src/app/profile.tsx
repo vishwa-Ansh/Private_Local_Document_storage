@@ -1,199 +1,963 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, Stack } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import {
+  onAuthStateChanged,
+  signOut,
+  updateProfile,
+  User,
+} from "firebase/auth";
+import {
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type IconName = keyof typeof Ionicons.glyphMap;
+import { auth, db } from "../lib/firebase";
+import { useTheme } from "../context/ThemeContext";
 
-export default function ProfilePage() {
+type UserProfile = {
+  uid: string;
+  name: string;
+  username: string;
+  email: string;
+  photoURL: string;
+  provider: string;
+  plan: string;
+};
+
+const getPhotoKey = (uid: string) =>
+  `@trilok_on_profile_photo_${uid}`;
+
+const getLocalPhotoPath = (uid: string) =>
+  `${FileSystem.documentDirectory}profile_${uid}.jpg`;
+
+function ProfilePage() {
+  const { colors, theme } = useTheme();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
+
+  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
+  const [showEditSheet, setShowEditSheet] = useState(false);
+
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (currentUser) => {
+        if (!currentUser) {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          router.replace("/login");
+          return;
+        }
+
+        setUser(currentUser);
+
+        try {
+          const userRef = doc(db, "users", currentUser.uid);
+          const snapshot = await getDoc(userRef);
+
+          let firestoreData: any = {};
+
+          if (snapshot.exists()) {
+            firestoreData = snapshot.data();
+          }
+
+          const localPhoto = await loadLocalPhoto(
+            currentUser.uid
+          );
+
+          const userProfile: UserProfile = {
+            uid: currentUser.uid,
+            name:
+              firestoreData.name ||
+              currentUser.displayName ||
+              "",
+            username: firestoreData.username || "",
+            email:
+              firestoreData.email ||
+              currentUser.email ||
+              "",
+            photoURL: localPhoto,
+            provider:
+              firestoreData.provider ||
+              currentUser.providerData?.[0]?.providerId ||
+              "password",
+            plan: firestoreData.plan || "free",
+          };
+
+          setProfile(userProfile);
+          setName(userProfile.name);
+          setUsername(userProfile.username);
+        } catch (error) {
+          console.error("Profile Load Error:", error);
+
+          Alert.alert(
+            "Unable to load profile",
+            "Please check your internet connection and try again."
+          );
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+
+    return unsubscribe;
+  }, []);
+
+  const loadLocalPhoto = async (uid: string) => {
+    try {
+      const savedPhoto = await AsyncStorage.getItem(
+        getPhotoKey(uid)
+      );
+
+      if (!savedPhoto) {
+        return "";
+      }
+
+      const info =
+        await FileSystem.getInfoAsync(savedPhoto);
+
+      if (info.exists) {
+        return savedPhoto;
+      }
+
+      await AsyncStorage.removeItem(getPhotoKey(uid));
+
+      return "";
+    } catch (error) {
+      console.error("Local Photo Load Error:", error);
+      return "";
+    }
+  };
+
+  const getInitials = () => {
+    const source =
+      profile?.name ||
+      user?.displayName ||
+      "U";
+
+    const parts = source
+      .trim()
+      .split(" ")
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+
+    return source
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission required",
+          "Please allow photo library access to select a profile photo."
+        );
+        return;
+      }
+
+      const result =
+        await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.9,
+        });
+
+      if (
+        !result.canceled &&
+        result.assets?.[0]?.uri
+      ) {
+        await saveLocalPhoto(
+          result.assets[0].uri
+        );
+      }
+    } catch (error) {
+      console.error("Gallery Error:", error);
+
+      Alert.alert(
+        "Error",
+        "Unable to select image."
+      );
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const permission =
+        await ImagePicker.requestCameraPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission required",
+          "Please allow camera access to take a profile photo."
+        );
+        return;
+      }
+
+      const result =
+        await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.9,
+        });
+
+      if (
+        !result.canceled &&
+        result.assets?.[0]?.uri
+      ) {
+        await saveLocalPhoto(
+          result.assets[0].uri
+        );
+      }
+    } catch (error) {
+      console.error("Camera Error:", error);
+
+      Alert.alert(
+        "Error",
+        "Unable to open camera."
+      );
+    }
+  };
+
+  const saveLocalPhoto = async (
+    imageUri: string
+  ) => {
+    if (!user) return;
+
+    setPhotoLoading(true);
+    setShowPhotoSheet(false);
+
+    try {
+      const localPath =
+        getLocalPhotoPath(user.uid);
+
+      const existing =
+        await FileSystem.getInfoAsync(localPath);
+
+      if (existing.exists) {
+        await FileSystem.deleteAsync(
+          localPath,
+          {
+            idempotent: true,
+          }
+        );
+      }
+
+      await FileSystem.copyAsync({
+        from: imageUri,
+        to: localPath,
+      });
+
+      await AsyncStorage.setItem(
+        getPhotoKey(user.uid),
+        localPath
+      );
+
+      setProfile((previous) =>
+        previous
+          ? {
+              ...previous,
+              photoURL: localPath,
+            }
+          : previous
+      );
+    } catch (error) {
+      console.error(
+        "Save Local Photo Error:",
+        error
+      );
+
+      Alert.alert(
+        "Photo error",
+        "Unable to save your profile photo on this device."
+      );
+    } finally {
+      setPhotoLoading(false);
+    }
+  };
+
+  const removePhoto = async () => {
+    if (!user) return;
+
+    setShowPhotoSheet(false);
+
+    Alert.alert(
+      "Remove profile photo?",
+      "Your profile photo will be removed from this device.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            setPhotoLoading(true);
+
+            try {
+              const localPath =
+                getLocalPhotoPath(user.uid);
+
+              await FileSystem.deleteAsync(
+                localPath,
+                {
+                  idempotent: true,
+                }
+              );
+
+              await AsyncStorage.removeItem(
+                getPhotoKey(user.uid)
+              );
+
+              setProfile((previous) =>
+                previous
+                  ? {
+                      ...previous,
+                      photoURL: "",
+                    }
+                  : previous
+              );
+            } catch (error) {
+              console.error(
+                "Remove Photo Error:",
+                error
+              );
+
+              Alert.alert(
+                "Error",
+                "Unable to remove your profile photo."
+              );
+            } finally {
+              setPhotoLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const saveProfileChanges = async () => {
+    if (!user) return;
+
+    const cleanName = name.trim();
+
+    const cleanUsername = username
+      .trim()
+      .replace(/\s+/g, "")
+      .replace(/^@/, "");
+
+    if (!cleanName) {
+      Alert.alert(
+        "Name required",
+        "Please enter your name."
+      );
+      return;
+    }
+
+    if (
+      cleanUsername &&
+      cleanUsername.length < 3
+    ) {
+      Alert.alert(
+        "Invalid username",
+        "Username must contain at least 3 characters."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      await updateProfile(user, {
+        displayName: cleanName,
+      });
+
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          uid: user.uid,
+          name: cleanName,
+          username: cleanUsername,
+          email: user.email || "",
+          provider:
+            profile?.provider ||
+            user.providerData?.[0]?.providerId ||
+            "password",
+          plan: profile?.plan || "free",
+          updatedAt: serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      );
+
+      setProfile((previous) =>
+        previous
+          ? {
+              ...previous,
+              name: cleanName,
+              username: cleanUsername,
+            }
+          : previous
+      );
+
+      setName(cleanName);
+      setUsername(cleanUsername);
+      setShowEditSheet(false);
+    } catch (error) {
+      console.error(
+        "Save Profile Error:",
+        error
+      );
+
+      Alert.alert(
+        "Update failed",
+        "Unable to update your profile. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      "Sign out",
+      "Are you sure you want to sign out?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              router.replace("/login");
+            } catch (error) {
+              console.error(
+                "Sign Out Error:",
+                error
+              );
+
+              Alert.alert(
+                "Error",
+                "Unable to sign out. Please try again."
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.loadingContainer,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <StatusBar
+          style={
+            theme === "dark"
+              ? "light"
+              : "dark"
+          }
+        />
+
+        <ActivityIndicator
+          size="small"
+          color={colors.text}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.loadingContainer,
+          {
+            backgroundColor:
+              colors.background,
+          },
+        ]}
+      >
+        <StatusBar
+          style={
+            theme === "dark"
+              ? "light"
+              : "dark"
+          }
+        />
+
+        <Text
+          style={[
+            styles.errorText,
+            {
+              color: colors.text,
+            },
+          ]}
+        >
+          Profile unavailable
+        </Text>
+
+        <Pressable
+          onPress={() =>
+            router.replace("/")
+          }
+          style={[
+            styles.backButton,
+            {
+              backgroundColor:
+                colors.primary,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.backButtonText,
+              {
+                color:
+                  colors.primaryText,
+              },
+            ]}
+          >
+            Go Home
+          </Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  const isPremium =
+    profile.plan === "premium";
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <Stack.Screen options={{
-      headerTransparent:true,
-      headerShown:false
-    }}/>
+    <SafeAreaView
+      style={[
+        styles.container,
+        {
+          backgroundColor:
+            colors.background,
+        },
+      ]}
+    >
+      <StatusBar
+        style={
+          theme === "dark"
+            ? "light"
+            : "dark"
+        }
+      />
+
+      <Stack.Screen
+        options={{
+          headerShown: false,
+        }}
+      />
+
       <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={
+          styles.content
+        }
       >
         <View style={styles.header}>
           <Pressable
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.pressed,
+            onPress={() =>
+              router.back()
+            }
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor:
+                  colors.surface,
+                borderColor:
+                  colors.border,
+              },
             ]}
-            onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={21} color="#161616" />
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={colors.text}
+            />
           </Pressable>
 
-          <Text style={styles.headerTitle}>Profile</Text>
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color: colors.text,
+              },
+            ]}
+          >
+            Profile
+          </Text>
 
           <Pressable
-            style={({ pressed }) => [
+            onPress={() =>
+              setShowEditSheet(true)
+            }
+            style={[
               styles.headerButton,
-              pressed && styles.pressed,
+              {
+                backgroundColor:
+                  colors.surface,
+                borderColor:
+                  colors.border,
+              },
             ]}
-            onPress={() => router.push("/settings")}
           >
-            <Ionicons name="settings-outline" size={20} color="#333" />
+            <Ionicons
+              name="create-outline"
+              size={20}
+              color={colors.text}
+            />
           </Pressable>
         </View>
 
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarWrapper}>
-            <View style={styles.avatar}>
-              <View style={styles.avatarInner}>
-                <Text style={styles.avatarText}>N</Text>
-              </View>
-            </View>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.editAvatar,
-                pressed && styles.editAvatarPressed,
-              ]}
-              accessibilityLabel="Change profile picture"
-            >
-              <Ionicons
-                name="camera-outline"
-                size={13}
-                color="#FFFFFF"
+        <View
+          style={styles.profileSection}
+        >
+          <Pressable
+            onPress={() =>
+              setShowPhotoSheet(true)
+            }
+            style={styles.avatarWrapper}
+          >
+            {profile.photoURL ? (
+              <Image
+                source={{
+                  uri: profile.photoURL,
+                }}
+                style={styles.avatar}
               />
-            </Pressable>
-          </View>
+            ) : (
+              <View
+                style={[
+                  styles.avatar,
+                  styles.initialAvatar,
+                  {
+                    backgroundColor:
+                      colors.primary,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.initialText,
+                    {
+                      color:
+                        colors.primaryText,
+                    },
+                  ]}
+                >
+                  {getInitials()}
+                </Text>
+              </View>
+            )}
 
-          <Text style={styles.name}>Night.vanta</Text>
-          <Text style={styles.email}>night@example.com</Text>
+            <View
+              style={[
+                styles.cameraButton,
+                {
+                  backgroundColor:
+                    colors.surface,
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              {photoLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.text}
+                />
+              ) : (
+                <Ionicons
+                  name="camera-outline"
+                  size={15}
+                  color={colors.text}
+                />
+              )}
+            </View>
+          </Pressable>
 
-          <View style={styles.planBadge}>
-            <Ionicons name="sparkles" size={11} color="#3D3D39" />
-            <Text style={styles.planBadgeText}>Free plan</Text>
+          <Text
+            style={[
+              styles.profileName,
+              {
+                color: colors.text,
+              },
+            ]}
+          >
+            {profile.name || "User"}
+          </Text>
+
+          {profile.username ? (
+            <Text
+              style={[
+                styles.username,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              @{profile.username}
+            </Text>
+          ) : null}
+
+          <Text
+            style={[
+              styles.email,
+              {
+                color: colors.textMuted,
+              },
+            ]}
+          >
+            {profile.email}
+          </Text>
+
+          <View
+            style={[
+              styles.providerBadge,
+              {
+                backgroundColor:
+                  colors.surfaceSecondary,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name={
+                profile.provider ===
+                "google.com"
+                  ? "logo-google"
+                  : profile.provider ===
+                    "github.com"
+                  ? "logo-github"
+                  : "mail-outline"
+              }
+              size={14}
+              color={
+                colors.textSecondary
+              }
+            />
+
+            <Text
+              style={[
+                styles.providerText,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              {profile.provider ===
+              "google.com"
+                ? "Google"
+                : profile.provider ===
+                  "github.com"
+                ? "GitHub"
+                : "Email"}
+            </Text>
           </View>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.upgradeCard,
-            pressed && styles.upgradePressed,
+        <View
+          style={[
+            styles.premiumCard,
+            {
+              backgroundColor:
+                theme === "dark"
+                  ? "#1B1B1E"
+                  : "#171717",
+              borderColor:
+                theme === "dark"
+                  ? "#303035"
+                  : "#292929",
+            },
           ]}
-          onPress={() =>
-            Alert.alert(
-              "Upgrade",
-              "Subscription options will be available here."
-            )
-          }
         >
-          <View style={styles.upgradeTop}>
-            <View style={styles.upgradeIcon}>
-              <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-            </View>
-
-            <View style={styles.upgradeArrow}>
+          <View style={styles.premiumTop}>
+            <View
+              style={[
+                styles.premiumIcon,
+                {
+                  backgroundColor:
+                    theme === "dark"
+                      ? "#29292D"
+                      : "#292929",
+                },
+              ]}
+            >
               <Ionicons
-                name="arrow-up-right"
-                size={16}
+                name="sparkles"
+                size={19}
                 color="#FFFFFF"
               />
             </View>
-          </View>
 
-          <Text style={styles.upgradeEyebrow}>TL-ON PREMIUM</Text>
+            <View
+              style={styles.premiumInfo}
+            >
+              <Text
+                style={
+                  styles.premiumTitle
+                }
+              >
+                {isPremium
+                  ? "Trilok-On Premium"
+                  : "Upgrade to Premium"}
+              </Text>
 
-          <Text style={styles.upgradeTitle}>
-            Unlock more intelligence.
-          </Text>
-
-          <Text style={styles.upgradeDescription}>
-            Higher limits, advanced models, larger context and
-            priority access.
-          </Text>
-
-          <View style={styles.upgradeBottom}>
-            <Text style={styles.upgradeButtonText}>
-              Explore plans
-            </Text>
+              <Text
+                style={
+                  styles.premiumSubtitle
+                }
+              >
+                {isPremium
+                  ? "Your premium plan is active."
+                  : "Unlock more power for your AI workspace."}
+              </Text>
+            </View>
 
             <Ionicons
-              name="arrow-forward"
-              size={15}
+              name="chevron-forward"
+              size={19}
               color="#FFFFFF"
             />
           </View>
-        </Pressable>
+
+          {!isPremium && (
+            <Pressable
+              onPress={() => {}}
+              style={
+                styles.upgradeButton
+              }
+            >
+              <Text
+                style={
+                  styles.upgradeButtonText
+                }
+              >
+                Explore Premium
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
         <Section title="Account">
           <ProfileRow
             icon="person-outline"
             title="Personal information"
-            subtitle="Name and profile details"
-            onPress={() => {}}
+            subtitle="Name and username"
+            onPress={() =>
+              setShowEditSheet(true)
+            }
           />
 
           <ProfileRow
             icon="mail-outline"
             title="Email address"
-            subtitle="night@example.com"
-            onPress={() => {}}
+            subtitle={profile.email}
+            onPress={() =>
+              Alert.alert(
+                "Email address",
+                "Your email address is managed by your authentication provider."
+              )
+            }
           />
 
           <ProfileRow
             icon="shield-checkmark-outline"
             title="Security"
-            subtitle="Password and account security"
-            onPress={() => {}}
-            last
+            subtitle="Authentication and account security"
+            onPress={() =>
+              Alert.alert(
+                "Security",
+                "Your authentication is securely managed by Firebase."
+              )
+            }
           />
         </Section>
 
         <Section title="Activity">
-          <View style={styles.usageCard}>
-            <View style={styles.usageHeader}>
-              <View>
-                <View style={styles.usageTitleRow}>
-                  <Text style={styles.usageTitle}>
-                    Current usage
-                  </Text>
-
-                  <View style={styles.liveDot} />
-                </View>
-
-                <Text style={styles.usageSubtitle}>
-                  Resets in 18 days
-                </Text>
-              </View>
-
-              <Text style={styles.usagePercent}>32%</Text>
-            </View>
-
-            <View style={styles.progressBackground}>
-              <View style={styles.progress} />
-            </View>
-
-            <View style={styles.usageStats}>
-              <UsageItem
-                icon="chatbubble-outline"
-                label="Messages"
-                value="320 / 1,000"
-              />
-
-              <View style={styles.statDivider} />
-
-              <UsageItem
-                icon="document-outline"
-                label="Files"
-                value="8 / 20"
-              />
-            </View>
-          </View>
+          <ProfileRow
+            icon="chatbubble-ellipses-outline"
+            title="Chat history"
+            subtitle="View your previous conversations"
+            onPress={() =>
+              router.push("/history")
+            }
+          />
 
           <ProfileRow
-            icon="bar-chart-outline"
-            title="Usage details"
-            subtitle="Models, features and limits"
-            onPress={() => router.push("/usage")}
-            last
+            icon="folder-open-outline"
+            title="Projects"
+            subtitle="Manage your AI projects"
+            onPress={() =>
+              router.push("/projects")
+            }
+          />
+
+          <ProfileRow
+            icon="analytics-outline"
+            title="Usage"
+            subtitle="View your AI usage"
+            onPress={() =>
+              Alert.alert(
+                "Usage",
+                "Detailed usage analytics will be available here."
+              )
+            }
           />
         </Section>
 
@@ -201,86 +965,174 @@ export default function ProfilePage() {
           <ProfileRow
             icon="settings-outline"
             title="Settings"
-            subtitle="Customize your TL-On experience"
-            onPress={() => router.push("/settings")}
+            subtitle="App preferences and configuration"
+            onPress={() =>
+              router.push("/settings")
+            }
+          />
+
+          <ProfileRow
+            icon="color-palette-outline"
+            title="Appearance"
+            subtitle={
+              theme === "dark"
+                ? "Dark mode"
+                : "Light mode"
+            }
+            onPress={() =>
+              router.push("/settings")
+            }
           />
 
           <ProfileRow
             icon="notifications-outline"
             title="Notifications"
             subtitle="Manage notification preferences"
-            onPress={() => {}}
-          />
-
-          <ProfileRow
-            icon="sparkles-outline"
-            title="Memory"
-            subtitle="Manage saved memories"
-            onPress={() => {}}
-            last
+            onPress={() =>
+              Alert.alert(
+                "Notifications",
+                "Notification preferences can be configured in Settings."
+              )
+            }
           />
         </Section>
 
         <Section title="Account actions">
           <ProfileRow
-            icon="log-out-outline"
-            title="Sign out"
-            subtitle="Sign out from this device"
+            icon="help-circle-outline"
+            title="Help & support"
+            subtitle="Get help with Trilok-On"
             onPress={() =>
               Alert.alert(
-                "Sign out",
-                "Are you sure you want to sign out?",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                  },
-                  {
-                    text: "Sign out",
-                    style: "destructive",
-                  },
-                ]
+                "Help & Support",
+                "Support options will be available here."
               )
             }
           />
 
           <ProfileRow
-            icon="trash-outline"
-            title="Delete account"
-            subtitle="Permanently delete your account"
+            icon="document-text-outline"
+            title="Terms & privacy"
+            subtitle="Legal information"
             onPress={() =>
               Alert.alert(
-                "Delete account",
-                "This action cannot be undone.",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                  },
-                  {
-                    text: "Delete",
-                    style: "destructive",
-                  },
-                ]
+                "Terms & Privacy",
+                "Legal information will be available here."
               )
             }
+          />
+
+          <ProfileRow
+            icon="log-out-outline"
+            title="Sign out"
+            subtitle="Sign out from this device"
             danger
-            last
+            onPress={handleSignOut}
           />
         </Section>
 
-        <View style={styles.footer}>
-          <View style={styles.footerMark}>
-            <Text style={styles.footerMarkText}>TL</Text>
+        <View
+          style={[
+            styles.usageCard,
+            {
+              backgroundColor:
+                colors.surface,
+              borderColor:
+                colors.border,
+            },
+          ]}
+        >
+          <View
+            style={styles.usageHeader}
+          >
+            <View>
+              <Text
+                style={[
+                  styles.usageTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
+                Free plan usage
+              </Text>
+
+              <Text
+                style={[
+                  styles.usageSubtitle,
+                  {
+                    color:
+                      colors.textSecondary,
+                  },
+                ]}
+              >
+                Your current usage overview
+              </Text>
+            </View>
+
+            <Ionicons
+              name="speedometer-outline"
+              size={21}
+              color={
+                colors.textSecondary
+              }
+            />
           </View>
 
-          <Text style={styles.footerBrand}>TL-On</Text>
+          <UsageItem
+            title="Messages"
+            value="12 / 50"
+            progress={0.24}
+          />
 
-          <Text style={styles.footerVersion}>
-            Intelligence beyond limits · 1.0.0
-          </Text>
+          <UsageItem
+            title="Projects"
+            value="2 / 5"
+            progress={0.4}
+          />
+
+          <UsageItem
+            title="Storage"
+            value="18 MB / 100 MB"
+            progress={0.18}
+          />
         </View>
+
+        <Text
+          style={[
+            styles.version,
+            {
+              color: colors.textMuted,
+            },
+          ]}
+        >
+          Trilok-On • Version 1.0.0
+        </Text>
       </ScrollView>
+
+      <PhotoSheet
+        visible={showPhotoSheet}
+        onClose={() =>
+          setShowPhotoSheet(false)
+        }
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onRemove={removePhoto}
+        hasPhoto={!!profile.photoURL}
+      />
+
+      <EditProfileSheet
+        visible={showEditSheet}
+        onClose={() =>
+          setShowEditSheet(false)
+        }
+        name={name}
+        username={username}
+        setName={setName}
+        setUsername={setUsername}
+        onSave={saveProfileChanges}
+        saving={saving}
+      />
     </SafeAreaView>
   );
 }
@@ -292,10 +1144,34 @@ function Section({
   title: string;
   children: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionCard}>{children}</View>
+      <Text
+        style={[
+          styles.sectionTitle,
+          {
+            color: colors.textMuted,
+          },
+        ]}
+      >
+        {title.toUpperCase()}
+      </Text>
+
+      <View
+        style={[
+          styles.sectionCard,
+          {
+            backgroundColor:
+              colors.surface,
+            borderColor:
+              colors.border,
+          },
+        ]}
+      >
+        {children}
+      </View>
     </View>
   );
 }
@@ -304,492 +1180,1093 @@ function ProfileRow({
   icon,
   title,
   subtitle,
-  danger = false,
   onPress,
-  last = false,
+  danger = false,
 }: {
-  icon: IconName;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
-  danger?: boolean;
   onPress: () => void;
-  last?: boolean;
+  danger?: boolean;
 }) {
+  const { colors, theme } =
+    useTheme();
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.row,
-        !last && styles.rowBorder,
-        pressed && styles.rowPressed,
+        styles.profileRow,
+        {
+          opacity: pressed ? 0.65 : 1,
+        },
       ]}
     >
       <View
         style={[
           styles.rowIcon,
-          danger && styles.dangerIcon,
+          {
+            backgroundColor: danger
+              ? theme === "dark"
+                ? "#321A1A"
+                : "#FCEDEA"
+              : colors.surfaceSecondary,
+          },
         ]}
       >
         <Ionicons
           name={icon}
-          size={18}
-          color={danger ? "#B83A30" : "#383834"}
+          size={19}
+          color={
+            danger
+              ? colors.danger
+              : colors.text
+          }
         />
       </View>
 
-      <View style={styles.rowContent}>
+      <View
+        style={styles.rowContent}
+      >
         <Text
           style={[
             styles.rowTitle,
-            danger && styles.dangerText,
+            {
+              color: danger
+                ? colors.danger
+                : colors.text,
+            },
           ]}
         >
           {title}
         </Text>
 
-        <Text style={styles.rowSubtitle}>{subtitle}</Text>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.rowSubtitle,
+            {
+              color:
+                colors.textMuted,
+            },
+          ]}
+        >
+          {subtitle}
+        </Text>
       </View>
 
       <Ionicons
         name="chevron-forward"
-        size={16}
-        color="#A3A39D"
+        size={18}
+        color={colors.textMuted}
       />
     </Pressable>
   );
 }
 
 function UsageItem({
-  icon,
-  label,
+  title,
   value,
+  progress,
 }: {
-  icon: IconName;
-  label: string;
+  title: string;
   value: string;
+  progress: number;
 }) {
+  const { colors } = useTheme();
+
   return (
-    <View style={styles.usageItem}>
-      <View style={styles.usageItemIcon}>
-        <Ionicons name={icon} size={14} color="#666" />
+    <View
+      style={styles.usageItem}
+    >
+      <View
+        style={styles.usageItemTop}
+      >
+        <Text
+          style={[
+            styles.usageItemTitle,
+            {
+              color:
+                colors.textSecondary,
+            },
+          ]}
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={[
+            styles.usageItemValue,
+            {
+              color: colors.text,
+            },
+          ]}
+        >
+          {value}
+        </Text>
       </View>
 
-      <View>
-        <Text style={styles.usageLabel}>{label}</Text>
-        <Text style={styles.usageValue}>{value}</Text>
+      <View
+        style={[
+          styles.progressTrack,
+          {
+            backgroundColor:
+              colors.surfaceSecondary,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.progressFill,
+            {
+              width: `${
+                Math.min(
+                  progress,
+                  1
+                ) * 100
+              }%`,
+              backgroundColor:
+                colors.primary,
+            },
+          ]}
+        />
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F7F7F5",
-  },
+function PhotoSheet({
+  visible,
+  onClose,
+  onCamera,
+  onGallery,
+  onRemove,
+  hasPhoto,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCamera: () => void;
+  onGallery: () => void;
+  onRemove: () => void;
+  hasPhoto: boolean;
+}) {
+  const { colors } =
+    useTheme();
 
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.modalOverlay,
+          {
+            backgroundColor:
+              colors.overlay,
+          },
+        ]}
+      >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor:
+                colors.surface,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sheetHandle,
+              {
+                backgroundColor:
+                  colors.border,
+              },
+            ]}
+          />
+
+          <View
+            style={styles.sheetHeader}
+          >
+            <View>
+              <Text
+                style={[
+                  styles.sheetTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
+                Profile photo
+              </Text>
+
+              <Text
+                style={[
+                  styles.sheetSubtitle,
+                  {
+                    color:
+                      colors.textMuted,
+                  },
+                ]}
+              >
+                Your photo stays on this device
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onClose}
+              style={[
+                styles.closeButton,
+                {
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                },
+              ]}
+            >
+              <Ionicons
+                name="close"
+                size={19}
+                color={colors.text}
+              />
+            </Pressable>
+          </View>
+
+          <SheetAction
+            icon="camera-outline"
+            title="Take a photo"
+            subtitle="Use your camera"
+            onPress={onCamera}
+          />
+
+          <SheetAction
+            icon="images-outline"
+            title="Choose from gallery"
+            subtitle="Select an existing photo"
+            onPress={onGallery}
+          />
+
+          {hasPhoto && (
+            <SheetAction
+              icon="trash-outline"
+              title="Remove photo"
+              subtitle="Delete the local profile photo"
+              danger
+              onPress={onRemove}
+            />
+          )}
+
+          <View
+            style={
+              styles.sheetBottomSpace
+            }
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SheetAction({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  danger = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  danger?: boolean;
+}) {
+  const { colors, theme } =
+    useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sheetAction,
+        {
+          backgroundColor:
+            pressed
+              ? colors.surfaceSecondary
+              : "transparent",
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.sheetActionIcon,
+          {
+            backgroundColor: danger
+              ? theme === "dark"
+                ? "#321A1A"
+                : "#FCEDEA"
+              : colors.surfaceSecondary,
+          },
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={21}
+          color={
+            danger
+              ? colors.danger
+              : colors.text
+          }
+        />
+      </View>
+
+      <View
+        style={
+          styles.sheetActionContent
+        }
+      >
+        <Text
+          style={[
+            styles.sheetActionTitle,
+            {
+              color: danger
+                ? colors.danger
+                : colors.text,
+            },
+          ]}
+        >
+          {title}
+        </Text>
+
+        <Text
+          style={[
+            styles.sheetActionSubtitle,
+            {
+              color:
+                colors.textMuted,
+            },
+          ]}
+        >
+          {subtitle}
+        </Text>
+      </View>
+
+      <Ionicons
+        name="chevron-forward"
+        size={18}
+        color={colors.textMuted}
+      />
+    </Pressable>
+  );
+}
+
+function EditProfileSheet({
+  visible,
+  onClose,
+  name,
+  username,
+  setName,
+  setUsername,
+  onSave,
+  saving,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  name: string;
+  username: string;
+  setName: (value: string) => void;
+  setUsername: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const { colors } =
+    useTheme();
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View
+        style={[
+          styles.modalOverlay,
+          {
+            backgroundColor:
+              colors.overlay,
+          },
+        ]}
+      >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor:
+                colors.surface,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.sheetHandle,
+              {
+                backgroundColor:
+                  colors.border,
+              },
+            ]}
+          />
+
+          <View
+            style={styles.sheetHeader}
+          >
+            <View>
+              <Text
+                style={[
+                  styles.sheetTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
+                Edit profile
+              </Text>
+
+              <Text
+                style={[
+                  styles.sheetSubtitle,
+                  {
+                    color:
+                      colors.textMuted,
+                  },
+                ]}
+              >
+                Update your profile information
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onClose}
+              style={[
+                styles.closeButton,
+                {
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                },
+              ]}
+            >
+              <Ionicons
+                name="close"
+                size={19}
+                color={colors.text}
+              />
+            </Pressable>
+          </View>
+
+          <View
+            style={styles.inputGroup}
+          >
+            <Text
+              style={[
+                styles.inputLabel,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              NAME
+            </Text>
+
+            <View
+              style={[
+                styles.inputWrapper,
+                {
+                  backgroundColor:
+                    colors.input,
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name="person-outline"
+                size={19}
+                color={colors.textMuted}
+              />
+
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="Your name"
+                placeholderTextColor={
+                  colors.textMuted
+                }
+                style={[
+                  styles.input,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
+
+          <View
+            style={styles.inputGroup}
+          >
+            <Text
+              style={[
+                styles.inputLabel,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              USERNAME
+            </Text>
+
+            <View
+              style={[
+                styles.inputWrapper,
+                {
+                  backgroundColor:
+                    colors.input,
+                  borderColor:
+                    colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.atSymbol,
+                  {
+                    color:
+                      colors.textMuted,
+                  },
+                ]}
+              >
+                @
+              </Text>
+
+              <TextInput
+                value={username}
+                onChangeText={
+                  setUsername
+                }
+                placeholder="username"
+                placeholderTextColor={
+                  colors.textMuted
+                }
+                style={[
+                  styles.input,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          </View>
+
+          <Pressable
+            disabled={saving}
+            onPress={onSave}
+            style={({ pressed }) => [
+              styles.saveButton,
+              {
+                backgroundColor:
+                  colors.primary,
+                opacity: saving
+                  ? 0.6
+                  : pressed
+                  ? 0.8
+                  : 1,
+              },
+            ]}
+          >
+            {saving ? (
+              <ActivityIndicator
+                size="small"
+                color={
+                  colors.primaryText
+                }
+              />
+            ) : (
+              <>
+                <Ionicons
+                  name="checkmark"
+                  size={19}
+                  color={
+                    colors.primaryText
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.saveButtonText,
+                    {
+                      color:
+                        colors.primaryText,
+                    },
+                  ]}
+                >
+                  Save changes
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          <View
+            style={
+              styles.sheetBottomSpace
+            }
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
 
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 42,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
 
   header: {
-    height: 58,
+    height: 54,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
   },
 
   headerTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "700",
-    letterSpacing: -0.2,
-    color: "#171717",
+    letterSpacing: -0.3,
   },
 
-  pressed: {
-    backgroundColor: "#ECECE8",
-  },
-
-  profileHeader: {
+  headerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: "center",
-    paddingTop: 18,
-    paddingBottom: 25,
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+
+  profileSection: {
+    alignItems: "center",
+    paddingTop: 20,
+    paddingBottom: 26,
   },
 
   avatarWrapper: {
+    width: 104,
+    height: 104,
     position: "relative",
+    marginBottom: 15,
   },
 
   avatar: {
-    width: 92,
-    height: 92,
-    borderRadius: 31,
-    padding: 1,
-    backgroundColor: "#D8D8D2",
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+  },
+
+  initialAvatar: {
     alignItems: "center",
     justifyContent: "center",
   },
 
-  avatarInner: {
-    width: 90,
-    height: 90,
-    borderRadius: 30,
-    backgroundColor: "#171717",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  avatarText: {
-    fontSize: 34,
+  initialText: {
+    fontSize: 31,
     fontWeight: "700",
-    color: "#FFFFFF",
     letterSpacing: -1,
   },
 
-  editAvatar: {
+  cameraButton: {
     position: "absolute",
-    right: -4,
-    bottom: -4,
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "#292929",
-    borderWidth: 3,
-    borderColor: "#F7F7F5",
+    right: -2,
+    bottom: 0,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
   },
 
-  editAvatarPressed: {
-    backgroundColor: "#444",
-  },
-
-  name: {
-    marginTop: 15,
-    fontSize: 22,
+  profileName: {
+    fontSize: 23,
     fontWeight: "700",
-    letterSpacing: -0.5,
-    color: "#171717",
+    letterSpacing: -0.6,
+  },
+
+  username: {
+    fontSize: 14,
+    marginTop: 3,
   },
 
   email: {
-    marginTop: 4,
-    fontSize: 12.5,
-    color: "#8A8A84",
+    fontSize: 13,
+    marginTop: 5,
   },
 
-  planBadge: {
-    marginTop: 11,
+  providerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 11,
     paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: "#EBEBE6",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginTop: 12,
   },
 
-  planBadgeText: {
-    fontSize: 10,
+  providerText: {
+    fontSize: 12,
     fontWeight: "600",
-    color: "#4D4D48",
   },
 
-  upgradeCard: {
+  premiumCard: {
+    borderRadius: 22,
     padding: 17,
-    borderRadius: 23,
-    backgroundColor: "#171717",
-    marginBottom: 27,
+    borderWidth: 1,
+    marginBottom: 28,
   },
 
-  upgradePressed: {
-    backgroundColor: "#222222",
-  },
-
-  upgradeTop: {
+  premiumTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
 
-  upgradeIcon: {
-    width: 43,
-    height: 43,
+  premiumIcon: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
-    backgroundColor: "#30302F",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  upgradeArrow: {
-    width: 31,
-    height: 31,
-    borderRadius: 16,
-    backgroundColor: "#2C2C2C",
-    alignItems: "center",
-    justifyContent: "center",
+  premiumInfo: {
+    flex: 1,
+    marginLeft: 12,
   },
 
-  upgradeEyebrow: {
-    marginTop: 17,
-    fontSize: 9,
-    fontWeight: "700",
-    letterSpacing: 1.1,
-    color: "#999994",
-  },
-
-  upgradeTitle: {
-    marginTop: 6,
-    fontSize: 21,
-    fontWeight: "700",
-    letterSpacing: -0.5,
+  premiumTitle: {
     color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
 
-  upgradeDescription: {
-    marginTop: 6,
-    maxWidth: 310,
-    fontSize: 11.5,
+  premiumSubtitle: {
+    color: "#AFAFAF",
+    fontSize: 12,
+    marginTop: 3,
     lineHeight: 17,
-    color: "#B9B9B5",
   },
 
-  upgradeBottom: {
-    alignSelf: "flex-start",
-    marginTop: 15,
-    flexDirection: "row",
+  upgradeButton: {
+    height: 43,
+    marginTop: 16,
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
-    gap: 7,
+    justifyContent: "center",
   },
 
   upgradeButtonText: {
-    fontSize: 11.5,
+    color: "#171717",
+    fontSize: 13,
     fontWeight: "700",
-    color: "#FFFFFF",
   },
 
   section: {
-    marginBottom: 23,
+    marginBottom: 25,
   },
 
   sectionTitle: {
-    marginLeft: 5,
-    marginBottom: 9,
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 0.9,
-    textTransform: "uppercase",
-    color: "#858580",
+    letterSpacing: 1.1,
+    marginBottom: 9,
+    paddingLeft: 4,
   },
 
   sectionCard: {
-    overflow: "hidden",
-    borderRadius: 20,
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: "#DFDFDA",
-    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
   },
 
-  row: {
-    minHeight: 70,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+  profileRow: {
+    minHeight: 72,
     flexDirection: "row",
     alignItems: "center",
-  },
-
-  rowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E5E0",
-  },
-
-  rowPressed: {
-    backgroundColor: "#F5F5F1",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
 
   rowIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 12,
-    backgroundColor: "#F1F1ED",
+    width: 42,
+    height: 42,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
   },
 
   rowContent: {
     flex: 1,
-    marginHorizontal: 11,
+    marginLeft: 12,
+    marginRight: 10,
   },
 
   rowTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#252525",
   },
 
   rowSubtitle: {
+    fontSize: 12,
     marginTop: 3,
-    fontSize: 10.5,
-    color: "#969690",
-  },
-
-  dangerIcon: {
-    backgroundColor: "#FCEDEA",
-  },
-
-  dangerText: {
-    color: "#B83A30",
   },
 
   usageCard: {
-    padding: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 17,
+    marginTop: 1,
   },
 
   usageHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-
-  usageTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
+    marginBottom: 19,
   },
 
   usageTitle: {
-    fontSize: 13.5,
-    fontWeight: "600",
-    color: "#252525",
-  },
-
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#666",
+    fontSize: 15,
+    fontWeight: "700",
   },
 
   usageSubtitle: {
+    fontSize: 12,
     marginTop: 3,
-    fontSize: 10.5,
-    color: "#999",
-  },
-
-  usagePercent: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#333",
-  },
-
-  progressBackground: {
-    height: 7,
-    marginTop: 14,
-    borderRadius: 4,
-    backgroundColor: "#E7E7E2",
-    overflow: "hidden",
-  },
-
-  progress: {
-    width: "32%",
-    height: "100%",
-    borderRadius: 4,
-    backgroundColor: "#292929",
-  },
-
-  usageStats: {
-    marginTop: 15,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  statDivider: {
-    width: 1,
-    height: 27,
-    marginHorizontal: 18,
-    backgroundColor: "#E4E4DF",
   },
 
   usageItem: {
+    marginBottom: 15,
+  },
+
+  usageItemTop: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
+    justifyContent: "space-between",
+    marginBottom: 7,
   },
 
-  usageItemIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 9,
-    backgroundColor: "#F1F1ED",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  usageLabel: {
-    fontSize: 9,
-    color: "#999",
-  },
-
-  usageValue: {
-    marginTop: 2,
-    fontSize: 10.5,
-    fontWeight: "600",
-    color: "#555",
-  },
-
-  footer: {
-    alignItems: "center",
-    paddingTop: 4,
-    paddingBottom: 16,
-  },
-
-  footerMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    backgroundColor: "#171717",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  footerMarkText: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    color: "#FFFFFF",
-  },
-
-  footerBrand: {
-    marginTop: 8,
+  usageItemTitle: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#555",
   },
 
-  footerVersion: {
+  usageItemValue: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  progressTrack: {
+    height: 6,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 6,
+  },
+
+  version: {
+    textAlign: "center",
+    fontSize: 11,
+    marginTop: 25,
+  },
+
+  errorText: {
+    fontSize: 17,
+    fontWeight: "600",
+    marginBottom: 18,
+  },
+
+  backButton: {
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 13,
+  },
+
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 4,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 17,
+  },
+
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+  },
+
+  sheetSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sheetAction: {
+    minHeight: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
+    paddingHorizontal: 8,
+  },
+
+  sheetActionIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sheetActionContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  sheetActionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  sheetActionSubtitle: {
+    fontSize: 12,
     marginTop: 3,
-    fontSize: 9.5,
-    color: "#A0A09A",
+  },
+
+  sheetBottomSpace: {
+    height: 15,
+  },
+
+  inputGroup: {
+    marginBottom: 17,
+  },
+
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+
+  inputWrapper: {
+    height: 52,
+    borderRadius: 15,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+  },
+
+  input: {
+    flex: 1,
+    fontSize: 14,
+    marginLeft: 10,
+    height: "100%",
+  },
+
+  atSymbol: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+
+  saveButton: {
+    height: 52,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 5,
+  },
+
+  saveButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
+
+export default ProfilePage;
