@@ -175,7 +175,17 @@ export async function deleteChat(chatId: string) {
     chatId
   );
 }
+export async function deleteMessage(messageId: string) {
+  const db = await getDatabase();
 
+  await db.runAsync(
+    `
+    DELETE FROM messages
+    WHERE id = ?
+    `,
+    messageId
+  );
+}
 export async function renameChat(
   chatId: string,
   title: string

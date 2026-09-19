@@ -7,13 +7,16 @@ import { useEffect, useRef, useState } from "react";
 import { MarkdownStream } from "@ronradtke/react-native-markdown-display";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -26,9 +29,12 @@ import {
   addMessage,
   cleanupOldChats,
   createChat,
+  deleteMessage,
   getChats,
   getMessages,
 } from "../lib/chatDatabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { auth } from "../lib/firebase";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -54,16 +60,20 @@ export default function HomePage() {
 
   const [message, setMessage] = useState("");
   const [recentChats, setRecentChats] = useState<
-  {
-    id: string;
-    title: string;
-    createdAt: number;
-    updatedAt: number;
-  }[]
->([]);
+    {
+      id: string;
+      title: string;
+      createdAt: number;
+      updatedAt: number;
+    }[]
+  >([]);
   const [menuVisible, setMenuVisible] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const abortControllerRef =
+    useRef<AbortController | null>(null);
+  const [userName, setUserName] = useState("User");
+  const [userPhoto, setUserPhoto] = useState<string | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<{
     name: string;
@@ -73,38 +83,66 @@ export default function HomePage() {
 
 
   const thinkingOpacity = useRef(
-  new Animated.Value(0.35)
-).current;
+    new Animated.Value(0.35)
+  ).current;
 
-useEffect(() => {
-  if (!loading) {
-    thinkingOpacity.setValue(0.35);
-    return;
-  }
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      const user = auth.currentUser;
 
-  const animation = Animated.loop(
-    Animated.sequence([
-      Animated.timing(thinkingOpacity, {
-        toValue: 1,
-        duration: 250,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.timing(thinkingOpacity, {
-        toValue: 0.35,
-        duration: 250,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-    ])
-  );
+      if (!user) {
+        return;
+      }
 
-  animation.start();
+      setUserName(
+        user.displayName ||
+        user.email?.split("@")[0] ||
+        "User"
+      );
 
-  return () => {
-    animation.stop();
-  };
-}, [loading]);
+      const photoKey =
+        `@trilok_on_profile_photo_${user.uid}`;
+
+      const localPhoto =
+        await AsyncStorage.getItem(photoKey);
+
+      if (localPhoto) {
+        setUserPhoto(localPhoto);
+      }
+    };
+
+    loadUserProfile();
+  }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      thinkingOpacity.setValue(0.35);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(thinkingOpacity, {
+          toValue: 1,
+          duration: 250,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(thinkingOpacity, {
+          toValue: 0.35,
+          duration: 250,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [loading]);
 
   useEffect(() => {
     const loadChat = async () => {
@@ -139,16 +177,16 @@ useEffect(() => {
 
 
   const loadRecentChats = async () => {
-  try {
-    await cleanupOldChats();
+    try {
+      await cleanupOldChats();
 
-    const chats = await getChats();
+      const chats = await getChats();
 
-    setRecentChats(chats.slice(0, 10));
-  } catch (error) {
-    console.error("LOAD RECENT CHATS ERROR:", error);
-  }
-};
+      setRecentChats(chats.slice(0, 10));
+    } catch (error) {
+      console.error("LOAD RECENT CHATS ERROR:", error);
+    }
+  };
 
   const markdownStyles = {
     body: {
@@ -442,236 +480,455 @@ useEffect(() => {
     }
   };
 
+  const copyMessage = async (text: string) => {
+    await Clipboard.setStringAsync(text);
+  };
 
-  const sendMessage = async (text?: string) => {
-    const question = (text ?? message).trim();
+  const shareMessage = async (text: string) => {
+    await Share.share({
+      message: text,
+    });
+  };
 
-    if ((!question && !selectedFile) || loading) {
-      return;
-    }
+const regenerateMessage = async (messageId: string) => {
+  if (loading) {
+    return;
+  }
 
-    const currentFile = selectedFile;
+  const index = messages.findIndex(
+    (item) => item.id === messageId
+  );
 
-    const userText =
-      question ||
-      `Attached file: ${currentFile?.name || "file"
-      }`;
+  if (index === -1) {
+    return;
+  }
 
-    let currentChatId = activeChatId;
+  const userMessage = [...messages]
+    .slice(0, index)
+    .reverse()
+    .find((item) => item.role === "user");
 
-    try {
-      if (!currentChatId) {
-        currentChatId = await createChat(
-          userText.slice(0, 60)
-        );
+  if (!userMessage) {
+    return;
+  }
 
-        setActiveChatId(currentChatId);
-      }
-     
+  const currentChatId = activeChatId;
 
-await loadRecentChats();
+  if (!currentChatId) {
+    return;
+  }
 
-      
+  const previousHistory = messages
+    .slice(0, index)
+    .slice(-10)
+    .map((item) => ({
+      role: item.role,
+      content: item.text,
+    }));
 
-      const previousHistory = messages
-        .slice(-10)
-        .map((item) => ({
-          role: item.role,
-          content: item.text,
-        }));
+  const controller = new AbortController();
 
-      const userMessageId =
-        `${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}`;
+  abortControllerRef.current = controller;
 
-      const userMessage: Message = {
-        id: userMessageId,
-        role: "user",
-        text: userText,
-      };
+  setMessages((prev) =>
+    prev.filter((item) => item.id !== messageId)
+  );
 
-      setMessages((prev) => [
-        ...prev,
-        userMessage,
-      ]);
+  await deleteMessage(messageId);
 
-      await addMessage(
-        currentChatId,
-        "user",
-        userText
+  setLoading(true);
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/plain",
+        "Accept-Encoding": "identity",
+      },
+      body: JSON.stringify({
+        message: userMessage.text,
+        history: previousHistory,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      console.log(
+        "REGENERATE API RESPONSE:",
+        errorText
       );
 
-      setMessage("");
-      setSelectedFile(null);
-      setLoading(true);
+      throw new Error(
+        `Regeneration failed: ${response.status}`
+      );
+    }
 
-      const assistantId =
-        `${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}`;
+    if (!response.body) {
+      throw new Error(
+        "Streaming response is not available"
+      );
+    }
 
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/plain",
-          "Accept-Encoding": "identity",
-        },
-        body: JSON.stringify({
-          message:
-            question ||
-            "Please analyze the attached file.",
-          history: previousHistory,
-        }),
-      });
+    const assistantId =
+      `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
 
-      if (!response.ok) {
-        const errorText =
-          await response.text();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        streaming: true,
+      },
+    ]);
 
-        console.log(
-          "API RESPONSE:",
-          errorText
-        );
+    const reader =
+      response.body.getReader();
 
-        throw new Error(
-          `AI request failed: ${response.status}`
-        );
+    const decoder =
+      new TextDecoder("utf-8");
+
+    let accumulatedText = "";
+
+    while (true) {
+      const { value, done } =
+        await reader.read();
+
+      if (done) {
+        break;
       }
 
-      if (!response.body) {
-        throw new Error(
-          "Streaming response is not available"
-        );
+      if (!value) {
+        continue;
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantId,
-          role: "assistant",
-          text: "",
-          streaming: true,
-        },
-      ]);
+      const chunk =
+        decoder.decode(value, {
+          stream: true,
+        });
 
-      const reader =
-        response.body.getReader();
-
-      const decoder =
-        new TextDecoder("utf-8");
-
-      let accumulatedText = "";
-
-      while (true) {
-        const { value, done } =
-          await reader.read();
-
-        if (done) {
-          break;
-        }
-
-        if (!value) {
-          continue;
-        }
-
-        const chunk =
-          decoder.decode(value, {
-            stream: true,
-          });
-
-        if (!chunk) {
-          continue;
-        }
-
-        accumulatedText += chunk;
-
-        setMessages((prev) =>
-          prev.map((item) =>
-            item.id === assistantId
-              ? {
-                ...item,
-                text: accumulatedText,
-                streaming: true,
-              }
-              : item
-          )
-        );
+      if (!chunk) {
+        continue;
       }
 
-      const remaining =
-        decoder.decode();
-
-      if (remaining) {
-        accumulatedText += remaining;
-      }
+      accumulatedText += chunk;
 
       setMessages((prev) =>
         prev.map((item) =>
           item.id === assistantId
             ? {
+                ...item,
+                text: accumulatedText,
+                streaming: true,
+              }
+            : item
+        )
+      );
+    }
+
+    const remaining =
+      decoder.decode();
+
+    if (remaining) {
+      accumulatedText += remaining;
+    }
+
+    setMessages((prev) =>
+      prev.map((item) =>
+        item.id === assistantId
+          ? {
               ...item,
               text: accumulatedText,
               streaming: false,
             }
-            : item
-        )
-      );
+          : item
+      )
+    );
 
+    if (accumulatedText.trim()) {
       await addMessage(
         currentChatId,
         "assistant",
         accumulatedText
       );
-    } catch (error) {
-      console.error(
-        "API ERROR:",
-        error
+    }
+
+    await loadRecentChats();
+
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "AbortError"
+    ) {
+      console.log(
+        "Regeneration stopped by user"
       );
 
-      const errorMessage =
-        "Sorry, I couldn't connect to Trilok-On right now. Please check your internet connection and try again.";
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id:
-            `${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2)}`,
-          role: "assistant",
-          text: errorMessage,
-          streaming: false,
-        },
-      ]);
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
 
+    console.error(
+      "REGENERATE ERROR:",
+      error
+    );
+  } finally {
+    setLoading(false);
+    abortControllerRef.current = null;
+  }
+};
 
+const sendMessage = async (text?: string) => {
+  const question = (text ?? message).trim();
+
+  if ((!question && !selectedFile) || loading) {
+    return;
+  }
+
+  const currentFile = selectedFile;
+
+  const userText =
+    question ||
+    `Attached file: ${currentFile?.name || "file"}`;
+
+  let currentChatId = activeChatId;
+
+  const controller = new AbortController();
+
+  abortControllerRef.current = controller;
+
+  try {
+    if (!currentChatId) {
+      currentChatId = await createChat(
+        userText.slice(0, 60)
+      );
+
+      setActiveChatId(currentChatId);
+    }
+
+    const previousHistory = messages
+      .slice(-10)
+      .map((item) => ({
+        role: item.role,
+        content: item.text,
+      }));
+
+    const userMessageId =
+      `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+    const userMessage: Message = {
+      id: userMessageId,
+      role: "user",
+      text: userText,
+    };
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+    ]);
+
+    await addMessage(
+      currentChatId,
+      "user",
+      userText
+    );
+
+    setMessage("");
+    setSelectedFile(null);
+    setLoading(true);
+
+    const assistantId =
+      `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/plain",
+        "Accept-Encoding": "identity",
+      },
+      body: JSON.stringify({
+        message:
+          question ||
+          "Please analyze the attached file.",
+        history: previousHistory,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText =
+        await response.text();
+
+      console.log(
+        "API RESPONSE:",
+        errorText
+      );
+
+      throw new Error(
+        `AI request failed: ${response.status}`
+      );
+    }
+
+    if (!response.body) {
+      throw new Error(
+        "Streaming response is not available"
+      );
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        streaming: true,
+      },
+    ]);
+
+    const reader =
+      response.body.getReader();
+
+    const decoder =
+      new TextDecoder("utf-8");
+
+    let accumulatedText = "";
+
+    while (true) {
+      const { value, done } =
+        await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      if (!value) {
+        continue;
+      }
+
+      const chunk =
+        decoder.decode(value, {
+          stream: true,
+        });
+
+      if (!chunk) {
+        continue;
+      }
+
+      accumulatedText += chunk;
+
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantId
+            ? {
+                ...item,
+                text: accumulatedText,
+                streaming: true,
+              }
+            : item
+        )
+      );
+    }
+
+    const remaining =
+      decoder.decode();
+
+    if (remaining) {
+      accumulatedText += remaining;
+    }
+
+    setMessages((prev) =>
+      prev.map((item) =>
+        item.id === assistantId
+          ? {
+              ...item,
+              text: accumulatedText,
+              streaming: false,
+            }
+          : item
+      )
+    );
+
+    if (accumulatedText.trim()) {
+      await addMessage(
+        currentChatId,
+        "assistant",
+        accumulatedText
+      );
+    }
+
+    await loadRecentChats();
+
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "AbortError"
+    ) {
+      console.log(
+        "Generation stopped by user"
+      );
+
+      return;
+    }
+
+    console.error(
+      "API ERROR:",
+      error
+    );
+
+    const errorMessage =
+      "Sorry, I couldn't connect to Trilok-On right now. Please check your internet connection and try again.";
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id:
+          `${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`,
+        role: "assistant",
+        text: errorMessage,
+        streaming: false,
+      },
+    ]);
+  } finally {
+    setLoading(false);
+
+    abortControllerRef.current = null;
+  }
+};
+const stopGenerating = () => {
+  abortControllerRef.current?.abort();
+};
 
 
   const newChat = () => {
-  setMessages([]);
-  setMessage("");
-  setSelectedFile(null);
-  setLoading(false);
-  setActiveChatId(null);
-  closeMenu();
+    setMessages([]);
+    setMessage("");
+    setSelectedFile(null);
+    setLoading(false);
+    setActiveChatId(null);
+    closeMenu();
 
-  router.replace("/");
-};
+    router.replace("/");
+  };
 
   const openModelSelection = () => {
     router.push("/model-selection");
   };
 
   const openMenu = async () => {
-  await loadRecentChats();
-  setMenuVisible(true);
-};
+    await loadRecentChats();
+    setMenuVisible(true);
+  };
 
   const closeMenu = () => {
     setMenuVisible(false);
@@ -873,19 +1130,74 @@ await loadRecentChats();
                     style={styles.aiResponse}
                   >
                     <MarkdownStream
-                      style={
-                        markdownStyles
-                      }
-                      onCopyCode={async (
-                        code
-                      ) => {
-                        await Clipboard.setStringAsync(
-                          code
-                        );
+                      style={markdownStyles}
+                      onCopyCode={async (code) => {
+                        await Clipboard.setStringAsync(code);
                       }}
                     >
                       {item.text}
                     </MarkdownStream>
+
+                    {!item.streaming && item.text.trim() && (
+                      <View style={styles.messageActions}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.messageAction,
+                            pressed && {
+                              backgroundColor:
+                                colors.surfaceSecondary,
+                            },
+                          ]}
+                          onPress={() =>
+                            copyMessage(item.text)
+                          }
+                        >
+                          <Ionicons
+                            name="copy-outline"
+                            size={16}
+                            color={colors.textSecondary}
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.messageAction,
+                            pressed && {
+                              backgroundColor:
+                                colors.surfaceSecondary,
+                            },
+                          ]}
+                          onPress={() =>
+                            regenerateMessage(item.id)
+                          }
+                        >
+                          <Ionicons
+                            name="refresh-outline"
+                            size={17}
+                            color={colors.textSecondary}
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.messageAction,
+                            pressed && {
+                              backgroundColor:
+                                colors.surfaceSecondary,
+                            },
+                          ]}
+                          onPress={() =>
+                            shareMessage(item.text)
+                          }
+                        >
+                          <Ionicons
+                            name="share-outline"
+                            size={16}
+                            color={colors.textSecondary}
+                          />
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
                 )
               )}
@@ -933,16 +1245,16 @@ await loadRecentChats();
                   </View>
 
                   <Animated.Text
-  style={[
-    styles.loadingText,
-    {
-      color: colors.textMuted,
-      opacity: thinkingOpacity,
-    },
-  ]}
->
-  Trilok-On is thinking...
-</Animated.Text>
+                    style={[
+                      styles.loadingText,
+                      {
+                        color: colors.textMuted,
+                        opacity: thinkingOpacity,
+                      },
+                    ]}
+                  >
+                    Trilok-On is thinking...
+                  </Animated.Text>
                 </View>
               )}
             </ScrollView>
@@ -1068,52 +1380,48 @@ await loadRecentChats();
                 }
               />
 
-              <Pressable
-                disabled={loading}
-                style={[
-                  styles.voiceButton,
-                  {
-                    backgroundColor:
-                      colors.surfaceSecondary,
-                  },
-                  (!!message.trim() ||
-                    !!selectedFile) &&
-                  {
-                    backgroundColor:
-                      colors.primary,
-                  },
-                  loading &&
-                  styles.disabledButton,
-                ]}
-                onPress={() =>
-                  sendMessage()
-                }
-              >
-                {loading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={
-                      colors.textSecondary
-                    }
-                  />
-                ) : (
-                  <Ionicons
-                    name={
-                      message.trim() ||
-                        selectedFile
-                        ? "arrow-up"
-                        : "mic-outline"
-                    }
-                    size={19}
-                    color={
-                      message.trim() ||
-                        selectedFile
-                        ? colors.primaryText
-                        : colors.textSecondary
-                    }
-                  />
-                )}
-              </Pressable>
+             <Pressable
+  style={[
+    styles.voiceButton,
+    {
+      backgroundColor: loading
+        ? colors.surfaceSecondary
+        : message.trim() || selectedFile
+        ? colors.primary
+        : colors.surfaceSecondary,
+    },
+    loading && styles.disabledButton,
+  ]}
+  onPress={() => {
+    if (loading) {
+      stopGenerating();
+    } else {
+      sendMessage();
+    }
+  }}
+>
+  {loading ? (
+    <Ionicons
+      name="stop"
+      size={16}
+      color={colors.text}
+    />
+  ) : (
+    <Ionicons
+      name={
+        message.trim() || selectedFile
+          ? "arrow-up"
+          : "mic-outline"
+      }
+      size={19}
+      color={
+        message.trim() || selectedFile
+          ? colors.primaryText
+          : colors.textSecondary
+      }
+    />
+  )}
+</Pressable>
             </View>
 
             <Text
@@ -1229,60 +1537,60 @@ await loadRecentChats();
             </Pressable>
 
             {recentChats.length > 0 && (
-  <View style={styles.recentChatsSection}>
-    <Text
-      style={[
-        styles.recentChatsTitle,
-        {
-          color: colors.textMuted,
-        },
-      ]}
-    >
-      Recent
-    </Text>
+              <View style={styles.recentChatsSection}>
+                <Text
+                  style={[
+                    styles.recentChatsTitle,
+                    {
+                      color: colors.textMuted,
+                    },
+                  ]}
+                >
+                  Recent
+                </Text>
 
-    {recentChats.map((chat) => (
-      <Pressable
-        key={chat.id}
-        style={({ pressed }) => [
-          styles.recentChatItem,
-          pressed && {
-            backgroundColor:
-              colors.surfaceSecondary,
-          },
-        ]}
-        onPress={() => {
-          closeMenu();
+                {recentChats.map((chat) => (
+                  <Pressable
+                    key={chat.id}
+                    style={({ pressed }) => [
+                      styles.recentChatItem,
+                      pressed && {
+                        backgroundColor:
+                          colors.surfaceSecondary,
+                      },
+                    ]}
+                    onPress={() => {
+                      closeMenu();
 
-          router.push({
-            pathname: "/",
-            params: {
-              chatId: chat.id,
-            },
-          });
-        }}
-      >
-        <Ionicons
-          name="chatbubble-outline"
-          size={17}
-          color={colors.textSecondary}
-        />
+                      router.push({
+                        pathname: "/",
+                        params: {
+                          chatId: chat.id,
+                        },
+                      });
+                    }}
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={17}
+                      color={colors.textSecondary}
+                    />
 
-        <Text
-          style={[
-            styles.recentChatText,
-            {
-              color: colors.text,
-            },
-          ]}
-          numberOfLines={1}
-        >
-          {chat.title}
-        </Text>
-      </Pressable>
-    ))}
-  </View>
-)}
+                    <Text
+                      style={[
+                        styles.recentChatText,
+                        {
+                          color: colors.text,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {chat.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
 
             <DrawerItem
               colors={colors}
@@ -1350,42 +1658,47 @@ await loadRecentChats();
               }
             />
 
-            <View
+            <Pressable
               style={[
                 styles.drawerBottom,
                 {
-                  backgroundColor:
-                    colors.surface,
-                  borderColor:
-                    colors.border,
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
                 },
               ]}
+              onPress={() => {
+                closeMenu();
+                router.push("/profile");
+              }}
             >
               <View
                 style={[
                   styles.accountAvatar,
                   {
-                    backgroundColor:
-                      colors.primary,
+                    backgroundColor: colors.primary,
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.accountAvatarText,
-                    {
-                      color:
-                        colors.primaryText,
-                    },
-                  ]}
-                >
-                  N
-                </Text>
+                {userPhoto ? (
+                  <Image
+                    source={{ uri: userPhoto }}
+                    style={styles.accountAvatarImage}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.accountAvatarText,
+                      {
+                        color: colors.primaryText,
+                      },
+                    ]}
+                  >
+                    {userName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </View>
 
-              <View
-                style={styles.accountInfo}
-              >
+              <View style={styles.accountInfo}>
                 <Text
                   style={[
                     styles.accountName,
@@ -1393,16 +1706,16 @@ await loadRecentChats();
                       color: colors.text,
                     },
                   ]}
+                  numberOfLines={1}
                 >
-                  Night.vanta
+                  {userName}
                 </Text>
 
                 <Text
                   style={[
                     styles.accountPlan,
                     {
-                      color:
-                        colors.textMuted,
+                      color: colors.textMuted,
                     },
                   ]}
                 >
@@ -1415,7 +1728,7 @@ await loadRecentChats();
                 size={17}
                 color={colors.textMuted}
               />
-            </View>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1816,31 +2129,52 @@ const styles = StyleSheet.create({
   },
 
   recentChatsSection: {
-  marginTop: 8,
-  marginBottom: 8,
-},
+    marginTop: 8,
+    marginBottom: 8,
+  },
 
-recentChatsTitle: {
-  fontSize: 11,
-  fontWeight: "600",
-  marginHorizontal: 11,
-  marginBottom: 5,
-  textTransform: "uppercase",
-  letterSpacing: 0.5,
-},
+  recentChatsTitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    marginHorizontal: 11,
+    marginBottom: 5,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
 
-recentChatItem: {
-  height: 43,
-  paddingHorizontal: 11,
-  borderRadius: 12,
-  flexDirection: "row",
-  alignItems: "center",
-},
+  recentChatItem: {
+    height: 43,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
 
-recentChatText: {
-  flex: 1,
-  marginLeft: 10,
-  fontSize: 12.5,
-  fontWeight: "500",
-},
+  recentChatText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 12.5,
+    fontWeight: "500",
+  },
+
+  messageActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 2,
+    marginBottom: 18,
+  },
+
+  messageAction: {
+    width: 34,
+    height: 32,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountAvatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+  },
 });

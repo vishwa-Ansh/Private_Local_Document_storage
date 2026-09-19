@@ -11,6 +11,7 @@ import {
 } from "firebase/storage";
 import { auth, db, storage } from "./firebase";
 
+
 export const uploadProfilePhoto = async (
   user: User,
   imageUri: string

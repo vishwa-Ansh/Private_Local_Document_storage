@@ -21,21 +21,22 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
-        }
-      ],
-      "expo-status-bar",
-      "@react-native-google-signin/google-signin",
-      "expo-web-browser",
-      "expo-sqlite"
-    ],
+"plugins": [
+  "expo-router",
+  [
+    "expo-splash-screen",
+    {
+      "backgroundColor": "#208AEF",
+      "image": "./assets/images/splash-icon.png",
+      "imageWidth": 76
+    }
+  ],
+  "expo-status-bar",
+  "@react-native-google-signin/google-signin",
+  "expo-web-browser",
+  "expo-sqlite",
+  "expo-local-authentication"
+],
     "extra": {
       "router": {},
       "eas": {

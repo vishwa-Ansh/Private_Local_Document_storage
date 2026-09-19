@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, router } from "expo-router";
-import { useState } from "react";
+import * as LocalAuthentication from "expo-local-authentication";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -15,6 +17,8 @@ import { useTheme } from "../context/ThemeContext";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
+const APP_LOCK_KEY = "@trilok_on_app_lock";
+
 export default function SettingsPage() {
   const { mode, setTheme, colors, theme } = useTheme();
 
@@ -22,9 +26,18 @@ export default function SettingsPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [timestamps, setTimestamps] = useState(false);
   const [streaming, setStreaming] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [responseCompleted, setResponseCompleted] = useState(true);
-  const [productUpdates, setProductUpdates] = useState(false);
+  const [pushNotifications, setPushNotifications] =
+    useState(true);
+  const [responseCompleted, setResponseCompleted] =
+    useState(true);
+  const [productUpdates, setProductUpdates] =
+    useState(false);
+
+  const [appLock, setAppLock] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] =
+    useState(false);
+  const [appLockLoading, setAppLockLoading] =
+    useState(true);
 
   const selectedTheme =
     mode === "system"
@@ -32,6 +45,116 @@ export default function SettingsPage() {
       : mode === "light"
       ? "Light"
       : "Dark";
+
+  useEffect(() => {
+    const loadAppLock = async () => {
+      try {
+        const savedLock =
+          await AsyncStorage.getItem(APP_LOCK_KEY);
+
+        setAppLock(savedLock === "true");
+
+        const hasHardware =
+          await LocalAuthentication.hasHardwareAsync();
+
+        const isEnrolled =
+          await LocalAuthentication.isEnrolledAsync();
+
+        setBiometricAvailable(
+          hasHardware && isEnrolled
+        );
+      } catch (error) {
+        console.error(
+          "APP LOCK LOAD ERROR:",
+          error
+        );
+      } finally {
+        setAppLockLoading(false);
+      }
+    };
+
+    loadAppLock();
+  }, []);
+
+  const toggleAppLock = async () => {
+    if (appLockLoading) {
+      return;
+    }
+
+    if (!biometricAvailable) {
+      Alert.alert(
+        "Biometric authentication unavailable",
+        "Please set up fingerprint, Face ID, or another supported device biometric first."
+      );
+
+      return;
+    }
+
+    if (appLock) {
+      Alert.alert(
+        "Disable App Lock",
+        "Are you sure you want to disable app lock?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Disable",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await AsyncStorage.setItem(
+                  APP_LOCK_KEY,
+                  "false"
+                );
+
+                setAppLock(false);
+              } catch (error) {
+                console.error(
+                  "DISABLE APP LOCK ERROR:",
+                  error
+                );
+              }
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    try {
+      const result =
+        await LocalAuthentication.authenticateAsync({
+          promptMessage: "Enable TL-On App Lock",
+          fallbackLabel: "Use device passcode",
+          disableDeviceFallback: false,
+        });
+
+      if (!result.success) {
+        return;
+      }
+
+      await AsyncStorage.setItem(
+        APP_LOCK_KEY,
+        "true"
+      );
+
+      setAppLock(true);
+    } catch (error: any) {
+      console.error(
+        "ENABLE APP LOCK ERROR:",
+        error
+      );
+
+      Alert.alert(
+        "Unable to enable App Lock",
+        error?.message ||
+          "Biometric authentication failed."
+      );
+    }
+  };
 
   return (
     <SafeAreaView
@@ -55,14 +178,23 @@ export default function SettingsPage() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[
+                styles.title,
+                {
+                  color: colors.text,
+                },
+              ]}
+            >
               Settings
             </Text>
 
             <Text
               style={[
                 styles.subtitle,
-                { color: colors.textMuted },
+                {
+                  color: colors.textMuted,
+                },
               ]}
             >
               Customize your TL-On experience
@@ -73,7 +205,8 @@ export default function SettingsPage() {
             style={[
               styles.settingsIcon,
               {
-                backgroundColor: colors.surfaceSecondary,
+                backgroundColor:
+                  colors.surfaceSecondary,
                 borderColor: colors.border,
               },
             ]}
@@ -86,13 +219,18 @@ export default function SettingsPage() {
           </View>
         </View>
 
-        <Section title="Account" colors={colors}>
+        <Section
+          title="Account"
+          colors={colors}
+        >
           <SettingRow
             colors={colors}
             icon="person-outline"
             title="Profile"
             subtitle="Manage your profile"
-            onPress={() => router.push("/profile")}
+            onPress={() =>
+              router.push("/profile")
+            }
           />
 
           <SettingRow
@@ -109,7 +247,9 @@ export default function SettingsPage() {
             title="Subscription"
             subtitle="Manage your current plan"
             badge="Free"
-            onPress={() => router.push("/usage")}
+            onPress={() =>
+              router.push("/usage")
+            }
           />
 
           <SettingRow
@@ -117,16 +257,103 @@ export default function SettingsPage() {
             icon="bar-chart-outline"
             title="Usage"
             subtitle="View your usage and limits"
-            onPress={() => router.push("/usage")}
+            onPress={() =>
+              router.push("/usage")
+            }
           />
         </Section>
 
-        <Section title="Appearance" colors={colors}>
+        <Section
+          title="Security"
+          colors={colors}
+        >
+          <View style={styles.settingRow}>
+            <View
+              style={[
+                styles.settingIcon,
+                {
+                  backgroundColor:
+                    colors.surfaceSecondary,
+                },
+              ]}
+            >
+              <Ionicons
+                name="finger-print-outline"
+                size={21}
+                color={colors.text}
+              />
+            </View>
+
+            <View style={styles.rowContent}>
+              <Text
+                style={[
+                  styles.rowTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
+                App Lock
+              </Text>
+
+              <Text
+                style={[
+                  styles.rowSubtitle,
+                  {
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                Lock TL-On with fingerprint,
+                Face ID, or device passcode
+              </Text>
+
+              {!biometricAvailable &&
+                !appLockLoading && (
+                  <Text
+                    style={[
+                      styles.securityHint,
+                      {
+                        color: colors.textMuted,
+                      },
+                    ]}
+                  >
+                    Set up biometrics on your
+                    device first
+                  </Text>
+                )}
+            </View>
+
+            <Switch
+              value={appLock}
+              onValueChange={toggleAppLock}
+              disabled={appLockLoading}
+              trackColor={{
+                false: colors.border,
+                true: colors.primary,
+              }}
+              thumbColor={
+                theme === "dark"
+                  ? "#111111"
+                  : "#FFFFFF"
+              }
+              ios_backgroundColor={
+                colors.border
+              }
+            />
+          </View>
+        </Section>
+
+        <Section
+          title="Appearance"
+          colors={colors}
+        >
           <View
             style={[
               styles.appearanceCard,
               {
-                backgroundColor: colors.surface,
+                backgroundColor:
+                  colors.surface,
                 borderColor: colors.border,
               },
             ]}
@@ -148,11 +375,15 @@ export default function SettingsPage() {
                 />
               </View>
 
-              <View style={styles.rowContent}>
+              <View
+                style={styles.rowContent}
+              >
                 <Text
                   style={[
                     styles.rowTitle,
-                    { color: colors.text },
+                    {
+                      color: colors.text,
+                    },
                   ]}
                 >
                   Theme
@@ -161,7 +392,10 @@ export default function SettingsPage() {
                 <Text
                   style={[
                     styles.rowSubtitle,
-                    { color: colors.textMuted },
+                    {
+                      color:
+                        colors.textMuted,
+                    },
                   ]}
                 >
                   Choose how TL-On looks
@@ -178,68 +412,75 @@ export default function SettingsPage() {
                 },
               ]}
             >
-              {(["System", "Light", "Dark"] as const).map(
-                (item) => {
-                  const active = selectedTheme === item;
+              {(
+                [
+                  "System",
+                  "Light",
+                  "Dark",
+                ] as const
+              ).map((item) => {
+                const active =
+                  selectedTheme === item;
 
-                  return (
-                    <Pressable
-                      key={item}
-                      onPress={() =>
-                        setTheme(
-                          item === "System"
-                            ? "system"
-                            : item === "Light"
-                            ? "light"
-                            : "dark"
-                        )
+                return (
+                  <Pressable
+                    key={item}
+                    onPress={() =>
+                      setTheme(
+                        item === "System"
+                          ? "system"
+                          : item === "Light"
+                          ? "light"
+                          : "dark"
+                      )
+                    }
+                    style={[
+                      styles.themeOption,
+                      active && {
+                        backgroundColor:
+                          colors.primary,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        item === "System"
+                          ? "phone-portrait-outline"
+                          : item === "Light"
+                          ? "sunny-outline"
+                          : "moon-outline"
                       }
+                      size={16}
+                      color={
+                        active
+                          ? colors.primaryText
+                          : colors.textSecondary
+                      }
+                    />
+
+                    <Text
                       style={[
-                        styles.themeOption,
-                        active && {
-                          backgroundColor: colors.primary,
+                        styles.themeText,
+                        {
+                          color: active
+                            ? colors.primaryText
+                            : colors.textSecondary,
                         },
                       ]}
                     >
-                      <Ionicons
-                        name={
-                          item === "System"
-                            ? "phone-portrait-outline"
-                            : item === "Light"
-                            ? "sunny-outline"
-                            : "moon-outline"
-                        }
-                        size={16}
-                        color={
-                          active
-                            ? colors.primaryText
-                            : colors.textSecondary
-                        }
-                      />
-
-                      <Text
-                        style={[
-                          styles.themeText,
-                          {
-                            color: active
-                              ? colors.primaryText
-                              : colors.textSecondary,
-                          },
-                        ]}
-                      >
-                        {item}
-                      </Text>
-                    </Pressable>
-                  );
-                }
-              )}
+                      {item}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Pressable
               style={[
                 styles.accentRow,
                 {
-                  borderTopColor: colors.border,
+                  borderTopColor:
+                    colors.border,
                 },
               ]}
               onPress={() =>
@@ -253,16 +494,21 @@ export default function SettingsPage() {
                 style={[
                   styles.accentColor,
                   {
-                    backgroundColor: colors.primary,
+                    backgroundColor:
+                      colors.primary,
                   },
                 ]}
               />
 
-              <View style={styles.rowContent}>
+              <View
+                style={styles.rowContent}
+              >
                 <Text
                   style={[
                     styles.rowTitle,
-                    { color: colors.text },
+                    {
+                      color: colors.text,
+                    },
                   ]}
                 >
                   Accent color
@@ -271,10 +517,14 @@ export default function SettingsPage() {
                 <Text
                   style={[
                     styles.rowSubtitle,
-                    { color: colors.textMuted },
+                    {
+                      color:
+                        colors.textMuted,
+                    },
                   ]}
                 >
-                  Customize the interface accent
+                  Customize the interface
+                  accent
                 </Text>
               </View>
 
@@ -287,9 +537,13 @@ export default function SettingsPage() {
           </View>
         </Section>
 
-        <Section title="Chat" colors={colors}>
+        <Section
+          title="Chat"
+          colors={colors}
+        >
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="return-down-forward-outline"
             title="Enter to send"
             subtitle="Press Enter to send messages"
@@ -299,6 +553,7 @@ export default function SettingsPage() {
 
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="arrow-down-outline"
             title="Auto-scroll"
             subtitle="Keep the latest response visible"
@@ -308,6 +563,7 @@ export default function SettingsPage() {
 
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="time-outline"
             title="Show timestamps"
             subtitle="Display message timestamps"
@@ -317,6 +573,7 @@ export default function SettingsPage() {
 
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="pulse-outline"
             title="Response streaming"
             subtitle="Show AI responses as they arrive"
@@ -333,9 +590,13 @@ export default function SettingsPage() {
           />
         </Section>
 
-        <Section title="Notifications" colors={colors}>
+        <Section
+          title="Notifications"
+          colors={colors}
+        >
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="notifications-outline"
             title="Push notifications"
             subtitle="Allow TL-On notifications"
@@ -345,6 +606,7 @@ export default function SettingsPage() {
 
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="checkmark-circle-outline"
             title="Response completed"
             subtitle="Notify when a response finishes"
@@ -354,6 +616,7 @@ export default function SettingsPage() {
 
           <ToggleRow
             colors={colors}
+            theme={theme}
             icon="megaphone-outline"
             title="Product updates"
             subtitle="News about TL-On and new features"
@@ -362,7 +625,10 @@ export default function SettingsPage() {
           />
         </Section>
 
-        <Section title="Data & Privacy" colors={colors}>
+        <Section
+          title="Data & Privacy"
+          colors={colors}
+        >
           <SettingRow
             colors={colors}
             icon="archive-outline"
@@ -426,13 +692,16 @@ export default function SettingsPage() {
           />
         </Section>
 
-        <Section title="About" colors={colors}>
+        <Section
+          title="About"
+          colors={colors}
+        >
           <SettingRow
             colors={colors}
             icon="information-circle-outline"
             title="About TL-On"
             subtitle="Learn more about the application"
-            onPress={() => {}}
+            onPress={() => {router.push("/about");}}
           />
 
           <SettingRow
@@ -440,7 +709,7 @@ export default function SettingsPage() {
             icon="shield-checkmark-outline"
             title="Privacy"
             subtitle="Privacy policy"
-            onPress={() => {}}
+            onPress={() => router.push("/privacy")}
           />
 
           <SettingRow
@@ -448,7 +717,7 @@ export default function SettingsPage() {
             icon="document-text-outline"
             title="Terms"
             subtitle="Terms of service"
-            onPress={() => {}}
+            onPress={() => router.push("/terms")}
           />
 
           <SettingRow
@@ -456,7 +725,7 @@ export default function SettingsPage() {
             icon="help-circle-outline"
             title="Help & support"
             subtitle="Get help with TL-On"
-            onPress={() => {}}
+            onPress={() => router.push("/help")}
           />
 
           <SettingRow
@@ -464,7 +733,7 @@ export default function SettingsPage() {
             icon="chatbubble-ellipses-outline"
             title="Send feedback"
             subtitle="Tell us what you think"
-            onPress={() => {}}
+            onPress={() => router.push("/feedback")}
           />
         </Section>
 
@@ -473,7 +742,8 @@ export default function SettingsPage() {
             style={[
               styles.versionLogo,
               {
-                backgroundColor: colors.primary,
+                backgroundColor:
+                  colors.primary,
               },
             ]}
           >
@@ -487,7 +757,10 @@ export default function SettingsPage() {
           <Text
             style={[
               styles.versionName,
-              { color: colors.textSecondary },
+              {
+                color:
+                  colors.textSecondary,
+              },
             ]}
           >
             TL-On
@@ -496,7 +769,9 @@ export default function SettingsPage() {
           <Text
             style={[
               styles.versionText,
-              { color: colors.textMuted },
+              {
+                color: colors.textMuted,
+              },
             ]}
           >
             Version 1.0.0
@@ -521,7 +796,9 @@ function Section({
       <Text
         style={[
           styles.sectionTitle,
-          { color: colors.textMuted },
+          {
+            color: colors.textMuted,
+          },
         ]}
       >
         {title}
@@ -531,7 +808,8 @@ function Section({
         style={[
           styles.sectionCard,
           {
-            backgroundColor: colors.surface,
+            backgroundColor:
+              colors.surface,
             borderColor: colors.border,
           },
         ]}
@@ -564,7 +842,8 @@ function SettingRow({
       style={({ pressed }) => [
         styles.settingRow,
         pressed && {
-          backgroundColor: colors.surfaceSecondary,
+          backgroundColor:
+            colors.surfaceSecondary,
         },
       ]}
       onPress={onPress}
@@ -582,7 +861,11 @@ function SettingRow({
         <Ionicons
           name={icon}
           size={19}
-          color={danger ? colors.danger : colors.text}
+          color={
+            danger
+              ? colors.danger
+              : colors.text
+          }
         />
       </View>
 
@@ -614,7 +897,10 @@ function SettingRow({
               <Text
                 style={[
                   styles.badgeText,
-                  { color: colors.textSecondary },
+                  {
+                    color:
+                      colors.textSecondary,
+                  },
                 ]}
               >
                 {badge}
@@ -627,7 +913,10 @@ function SettingRow({
           <Text
             style={[
               styles.rowSubtitle,
-              { color: colors.textMuted },
+              {
+                color:
+                  colors.textMuted,
+              },
             ]}
           >
             {subtitle}
@@ -651,6 +940,7 @@ function ToggleRow({
   value,
   onChange,
   colors,
+  theme,
 }: {
   icon: IconName;
   title: string;
@@ -658,6 +948,7 @@ function ToggleRow({
   value: boolean;
   onChange: (value: boolean) => void;
   colors: any;
+  theme: "light" | "dark";
 }) {
   return (
     <View style={styles.settingRow}>
@@ -665,7 +956,8 @@ function ToggleRow({
         style={[
           styles.settingIcon,
           {
-            backgroundColor: colors.surfaceSecondary,
+            backgroundColor:
+              colors.surfaceSecondary,
           },
         ]}
       >
@@ -680,7 +972,9 @@ function ToggleRow({
         <Text
           style={[
             styles.rowTitle,
-            { color: colors.text },
+            {
+              color: colors.text,
+            },
           ]}
         >
           {title}
@@ -689,7 +983,10 @@ function ToggleRow({
         <Text
           style={[
             styles.rowSubtitle,
-            { color: colors.textMuted },
+            {
+              color:
+                colors.textMuted,
+            },
           ]}
         >
           {subtitle}
@@ -708,19 +1005,21 @@ function ToggleRow({
             ? "#111111"
             : "#FFFFFF"
         }
-        ios_backgroundColor={colors.border}
+        ios_backgroundColor={
+          colors.border
+        }
       />
     </View>
   );
 }
 
-function themeDangerBackground(colors: any) {
+function themeDangerBackground(
+  colors: any
+) {
   return colors.theme === "dark"
     ? "#321A1A"
     : "#FCEDEA";
 }
-
-const theme = "light";
 
 const styles = StyleSheet.create({
   safe: {
@@ -821,6 +1120,11 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
   },
 
+  securityHint: {
+    marginTop: 4,
+    fontSize: 10,
+  },
+
   badge: {
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -873,7 +1177,8 @@ const styles = StyleSheet.create({
     minHeight: 65,
     marginTop: 7,
     paddingHorizontal: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth:
+      StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
   },
